@@ -26,6 +26,17 @@ import {
   DEFAULT_ADMIN_PIN
 } from "@/lib/storage";
 import { 
+  getGasApiUrl, 
+  saveGasApiUrl, 
+  getGdriveFolderId, 
+  saveGdriveFolderId, 
+  getLastSyncTime, 
+  testGasConnection, 
+  fetchPortalDataFromCloud, 
+  syncAllToCloud, 
+  uploadFileToGoogleDrive 
+} from "@/lib/cloudSync";
+import { 
   Lock, 
   KeyRound, 
   ShieldCheck, 
@@ -46,7 +57,10 @@ import {
   Eye,
   LogOut,
   Sparkles,
-  Link2
+  Link2,
+  Cloud,
+  RefreshCw,
+  Database
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -87,6 +101,19 @@ export default function AdminPage() {
   const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Cloud Sync States
+  const [gasUrl, setGasUrl] = useState("");
+  const [folderId, setFolderId] = useState("");
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<"connected" | "disconnected" | "testing" | "idle">("idle");
+  const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+
+  // Doc File Upload State
+  const [selectedDocFile, setSelectedDocFile] = useState<{ file: File; base64: string } | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
   // Load Data on Mount
   useEffect(() => {
     // Check if session has admin unlocked
@@ -95,6 +122,40 @@ export default function AdminPage() {
       setIsAuthenticated(true);
     }
     loadAllData();
+    const storedUrl = getGasApiUrl();
+    const storedFolder = getGdriveFolderId();
+    const storedLastSync = getLastSyncTime();
+    setGasUrl(storedUrl);
+    setFolderId(storedFolder);
+    setLastSync(storedLastSync);
+    if (storedUrl) {
+      setCloudStatus("connected");
+      fetchPortalDataFromCloud(storedUrl).then((res) => {
+        if (res.success && res.data) {
+          if (res.data.apps && res.data.apps.length > 0) {
+            setApps(res.data.apps);
+            saveStoredApps(res.data.apps);
+          }
+          if (res.data.courses && res.data.courses.length > 0) {
+            setCourses(res.data.courses);
+            saveStoredCourses(res.data.courses);
+          }
+          if (res.data.events && res.data.events.length > 0) {
+            setEvents(res.data.events);
+            saveStoredEvents(res.data.events);
+          }
+          if (res.data.docs && res.data.docs.length > 0) {
+            setDocs(res.data.docs);
+            saveStoredDocuments(res.data.docs);
+          }
+          if (res.data.bannerAlert) {
+            setBannerAlert(res.data.bannerAlert);
+            saveStoredBannerAlert(res.data.bannerAlert);
+          }
+          setLastSync(new Date().toLocaleTimeString("id-ID"));
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   const loadAllData = () => {
@@ -108,6 +169,27 @@ export default function AdminPage() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Background Cloud Sync
+  const triggerBackgroundCloudSync = (
+    updatedApps = apps,
+    updatedCourses = courses,
+    updatedEvents = events,
+    updatedDocs = docs,
+    updatedBanner = bannerAlert
+  ) => {
+    if (getGasApiUrl()) {
+      syncAllToCloud({
+        apps: updatedApps,
+        courses: updatedCourses,
+        events: updatedEvents,
+        docs: updatedDocs,
+        bannerAlert: updatedBanner
+      }).then(() => {
+        setLastSync(new Date().toLocaleTimeString("id-ID"));
+      }).catch(() => {});
+    }
   };
 
   // Login handler
@@ -155,6 +237,7 @@ export default function AdminPage() {
     }
     setApps(updated);
     saveStoredApps(updated);
+    triggerBackgroundCloudSync(updated, courses, events, docs, bannerAlert);
     setAppModalOpen(false);
     setEditingApp(null);
     setCustomIconPreview(null);
@@ -165,6 +248,7 @@ export default function AdminPage() {
       const updated = apps.filter((a) => a.id !== id);
       setApps(updated);
       saveStoredApps(updated);
+      triggerBackgroundCloudSync(updated, courses, events, docs, bannerAlert);
       showToast("Link sistem telah dihapus.");
     }
   };
@@ -193,6 +277,7 @@ export default function AdminPage() {
     }
     setCourses(updated);
     saveStoredCourses(updated);
+    triggerBackgroundCloudSync(apps, updated, events, docs, bannerAlert);
     setCourseModalOpen(false);
     setEditingCourse(null);
   };
@@ -202,6 +287,7 @@ export default function AdminPage() {
       const updated = courses.filter((c) => c.id !== id);
       setCourses(updated);
       saveStoredCourses(updated);
+      triggerBackgroundCloudSync(apps, updated, events, docs, bannerAlert);
       showToast("Kursus berhasil dihapus.");
     }
   };
@@ -231,6 +317,7 @@ export default function AdminPage() {
     }
     setEvents(updated);
     saveStoredEvents(updated);
+    triggerBackgroundCloudSync(apps, courses, updated, docs, bannerAlert);
     setEventModalOpen(false);
     setEditingEvent(null);
   };
@@ -240,15 +327,46 @@ export default function AdminPage() {
       const updated = events.filter((e) => e.id !== id);
       setEvents(updated);
       saveStoredEvents(updated);
+      triggerBackgroundCloudSync(apps, courses, updated, docs, bannerAlert);
       showToast("Jadwal pelatihan berhasil dihapus.");
     }
   };
 
   // ==================== DOCUMENT CRUD ====================
-  const handleSaveDocument = (docData: Partial<DocumentItem>) => {
+  const handleSaveDocument = async (docData: Partial<DocumentItem>) => {
+    let finalDocUrl = docData.downloadUrl || "#";
+    let gdriveId: string | undefined = undefined;
+
+    // Upload to Google Drive if file selected and GAS configured
+    if (selectedDocFile && getGasApiUrl()) {
+      setIsUploadingDoc(true);
+      showToast("Mengunggah file ke Google Drive...");
+      try {
+        const uploadRes = await uploadFileToGoogleDrive({
+          fileName: selectedDocFile.file.name,
+          fileBase64: selectedDocFile.base64,
+          mimeType: selectedDocFile.file.type || "application/pdf"
+        });
+        if (uploadRes.success && uploadRes.downloadUrl) {
+          finalDocUrl = uploadRes.downloadUrl;
+          gdriveId = uploadRes.fileId;
+          showToast("File berhasil disimpan ke Google Drive!");
+        }
+      } catch (err) {
+        console.error("Gdrive upload error:", err);
+      } finally {
+        setIsUploadingDoc(false);
+      }
+    }
+
     let updated: DocumentItem[];
     if (editingDoc) {
-      updated = docs.map((d) => (d.id === editingDoc.id ? { ...d, ...docData } as DocumentItem : d));
+      updated = docs.map((d) => (d.id === editingDoc.id ? { 
+        ...d, 
+        ...docData, 
+        downloadUrl: finalDocUrl,
+        ...(gdriveId ? { gdriveFileId: gdriveId } : {})
+      } as DocumentItem : d));
       showToast("Dokumen berhasil diperbarui!");
     } else {
       const newDoc: DocumentItem = {
@@ -258,15 +376,17 @@ export default function AdminPage() {
         format: docData.format || "PDF",
         size: docData.size || "1.5 MB",
         updatedAt: new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
-        downloadUrl: docData.downloadUrl || "#"
+        downloadUrl: finalDocUrl
       };
       updated = [newDoc, ...docs];
-      showToast("Dokumen baru berhasil diunggah!");
+      showToast("Dokumen baru berhasil disimpan!");
     }
     setDocs(updated);
     saveStoredDocuments(updated);
+    triggerBackgroundCloudSync(apps, courses, events, updated, bannerAlert);
     setDocModalOpen(false);
     setEditingDoc(null);
+    setSelectedDocFile(null);
   };
 
   const handleDeleteDoc = (id: string) => {
@@ -274,6 +394,7 @@ export default function AdminPage() {
       const updated = docs.filter((d) => d.id !== id);
       setDocs(updated);
       saveStoredDocuments(updated);
+      triggerBackgroundCloudSync(apps, courses, events, updated, bannerAlert);
       showToast("Dokumen berhasil dihapus.");
     }
   };
@@ -282,6 +403,7 @@ export default function AdminPage() {
   const handleSaveBanner = (e: React.FormEvent) => {
     e.preventDefault();
     saveStoredBannerAlert(bannerAlert);
+    triggerBackgroundCloudSync(apps, courses, events, docs, bannerAlert);
     showToast("Pengaturan banner peringatan berhasil disimpan!");
   };
 
@@ -713,6 +835,7 @@ export default function AdminPage() {
               <button
                 onClick={() => {
                   setEditingDoc(null);
+                  setSelectedDocFile(null);
                   setDocModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all self-start sm:self-auto"
@@ -736,6 +859,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => {
                         setEditingDoc(d);
+                        setSelectedDocFile(null);
                         setDocModalOpen(true);
                       }}
                       className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-700 transition-colors"
@@ -760,6 +884,171 @@ export default function AdminPage() {
         {/* ==================== TAB 5: SETTINGS & BACKUP ==================== */}
         {activeTab === "settings" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Google Apps Script & Google Drive Integration Card */}
+            <div className="md:col-span-2 bg-gradient-to-br from-slate-800/90 to-blue-950/40 border border-blue-900/40 rounded-xl p-5 space-y-4 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-blue-600/30 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Integrasi Cloud Database (Google Sheets & GDrive)</span>
+                      {cloudStatus === "connected" ? (
+                        <span className="text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Terhubung
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold bg-amber-950 text-amber-400 border border-amber-800 px-2 py-0.5 rounded-full">
+                          ● Mode Lokal
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Hubungkan ke Google Apps Script agar perubahan data & link otomatis tersimpan di Google Sheets dan tampil di seluruh perangkat karyawan.
+                    </p>
+                  </div>
+                </div>
+
+                {lastSync && (
+                  <span className="text-[11px] text-slate-400">
+                    Sinkron terakhir: <strong className="text-blue-300">{lastSync}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div>
+                  <label className="block text-slate-300 text-xs font-semibold mb-1">
+                    URL Web App Google Apps Script
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                    value={gasUrl}
+                    onChange={(e) => setGasUrl(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Salin URL dari deployment Google Apps Script (lihat panduan di folder <code>google-apps-script/README.md</code>).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 text-xs font-semibold mb-1">
+                    ID Folder Google Drive untuk Upload Dokumen (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 1a2B3c4D5e... (Kosongkan untuk simpan di root Drive)"
+                    value={folderId}
+                    onChange={(e) => setFolderId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs"
+                  />
+                </div>
+
+                {cloudMessage && (
+                  <div className={`p-2.5 rounded-lg text-xs font-medium ${
+                    cloudStatus === "connected" ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800" : "bg-rose-950/80 text-rose-300 border border-rose-800"
+                  }`}>
+                    {cloudMessage}
+                  </div>
+                )}
+
+                <div className="pt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!gasUrl) {
+                        alert("Harap masukkan URL Google Apps Script terlebih dahulu!");
+                        return;
+                      }
+                      saveGasApiUrl(gasUrl);
+                      saveGdriveFolderId(folderId);
+                      setIsTestingConnection(true);
+                      setCloudMessage(null);
+                      const res = await testGasConnection(gasUrl);
+                      setIsTestingConnection(false);
+                      if (res.success) {
+                        setCloudStatus("connected");
+                        setCloudMessage("✓ " + res.message);
+                        showToast("Koneksi cloud berhasil!");
+                      } else {
+                        setCloudStatus("disconnected");
+                        setCloudMessage("✕ " + res.message);
+                      }
+                    }}
+                    disabled={isTestingConnection}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingConnection ? "animate-spin" : ""}`} />
+                    <span>{isTestingConnection ? "Menghubungi..." : "Tes Koneksi Cloud"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!gasUrl) {
+                        alert("Masukkan dan simpan URL Web App Google Apps Script terlebih dahulu!");
+                        return;
+                      }
+                      saveGasApiUrl(gasUrl);
+                      saveGdriveFolderId(folderId);
+                      setIsSyncingCloud(true);
+                      const res = await syncAllToCloud({
+                        apps,
+                        courses,
+                        events,
+                        docs,
+                        bannerAlert
+                      });
+                      setIsSyncingCloud(false);
+                      if (res.success) {
+                        setCloudStatus("connected");
+                        setLastSync(new Date().toLocaleTimeString("id-ID"));
+                        showToast("Semua data berhasil disimpan ke Google Sheets!");
+                      } else {
+                        alert("Gagal sinkronisasi: " + res.error);
+                      }
+                    }}
+                    disabled={isSyncingCloud}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    <Database className={`w-3.5 h-3.5 ${isSyncingCloud ? "animate-spin" : ""}`} />
+                    <span>{isSyncingCloud ? "Menyimpan ke Sheets..." : "Kirim / Sinkron Data ke Google Sheets"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!gasUrl) {
+                        alert("Masukkan URL Google Apps Script!");
+                        return;
+                      }
+                      setIsSyncingCloud(true);
+                      const res = await fetchPortalDataFromCloud(gasUrl);
+                      setIsSyncingCloud(false);
+                      if (res.success && res.data) {
+                        if (res.data.apps) { setApps(res.data.apps); saveStoredApps(res.data.apps); }
+                        if (res.data.courses) { setCourses(res.data.courses); saveStoredCourses(res.data.courses); }
+                        if (res.data.events) { setEvents(res.data.events); saveStoredEvents(res.data.events); }
+                        if (res.data.docs) { setDocs(res.data.docs); saveStoredDocuments(res.data.docs); }
+                        if (res.data.bannerAlert) { setBannerAlert(res.data.bannerAlert); saveStoredBannerAlert(res.data.bannerAlert); }
+                        setLastSync(new Date().toLocaleTimeString("id-ID"));
+                        showToast("Data terbaru berhasil ditarik dari Google Sheets!");
+                      } else {
+                        alert("Gagal mengambil data: " + res.error);
+                      }
+                    }}
+                    disabled={isSyncingCloud}
+                    className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <span>Tarik Data Terbaru dari Sheets</span>
+                  </button>
+                </div>
+              </div>
+            </div>
             
             {/* Banner Reminder Settings */}
             <div className="bg-slate-800/50 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -1369,10 +1658,39 @@ export default function AdminPage() {
                           formatSelect.value = ext;
                         }
                       }
+                      // Read file as Base64 for Google Drive cloud storage
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64 = (event.target?.result as string) || "";
+                        setSelectedDocFile({ file, base64 });
+                      };
+                      reader.readAsDataURL(file);
                     }
                   }}
                   className="mt-2 text-xs text-slate-400 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
                 />
+
+                {selectedDocFile && (
+                  <div className="mt-3 p-2.5 bg-blue-950/40 border border-blue-800/60 rounded-lg flex items-center justify-between text-left">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                      <div className="truncate">
+                        <p className="text-xs font-semibold text-white truncate">{selectedDocFile.file.name}</p>
+                        <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          {gasUrl ? "Akan otomatis diunggah ke Google Drive saat disimpan" : "File siap disimpan"}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocFile(null)}
+                      className="text-slate-400 hover:text-rose-400 text-xs shrink-0 px-2 py-0.5"
+                    >
+                      Batal
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1439,15 +1757,18 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setDocModalOpen(false)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg font-medium"
+                  disabled={isUploadingDoc}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-300 rounded-lg font-medium"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold"
+                  disabled={isUploadingDoc}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-semibold flex items-center gap-2"
                 >
-                  Simpan Dokumen
+                  {isUploadingDoc && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isUploadingDoc ? "Mengunggah ke Drive..." : "Simpan Dokumen"}</span>
                 </button>
               </div>
             </form>

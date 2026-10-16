@@ -17,13 +17,19 @@ import {
 } from "@/data/portalData";
 import { 
   getStoredApps, 
+  saveStoredApps,
   getStoredCourses, 
+  saveStoredCourses,
   getStoredEvents, 
+  saveStoredEvents,
   getStoredDocuments, 
+  saveStoredDocuments,
   getStoredBannerAlert,
+  saveStoredBannerAlert,
   BannerAlertConfig,
   initialBannerAlert
 } from "@/lib/storage";
+import { fetchPortalDataFromCloud } from "@/lib/cloudSync";
 import { 
   LayoutGrid, 
   BookOpen, 
@@ -53,6 +59,32 @@ export default function Home() {
     setEvents(getStoredEvents());
     setDocs(getStoredDocuments());
     setBannerAlert(getStoredBannerAlert());
+
+    // Fetch synchronized data from cloud (Google Sheets) if configured
+    fetchPortalDataFromCloud().then((res) => {
+      if (res.success && res.data) {
+        if (res.data.apps && res.data.apps.length > 0) {
+          setApps(res.data.apps);
+          saveStoredApps(res.data.apps);
+        }
+        if (res.data.courses && res.data.courses.length > 0) {
+          setCourses(res.data.courses);
+          saveStoredCourses(res.data.courses);
+        }
+        if (res.data.events && res.data.events.length > 0) {
+          setEvents(res.data.events);
+          saveStoredEvents(res.data.events);
+        }
+        if (res.data.docs && res.data.docs.length > 0) {
+          setDocs(res.data.docs);
+          saveStoredDocuments(res.data.docs);
+        }
+        if (res.data.bannerAlert) {
+          setBannerAlert(res.data.bannerAlert);
+          saveStoredBannerAlert(res.data.bannerAlert);
+        }
+      }
+    }).catch(() => {});
 
     // Listen for storage changes across tabs
     const handleStorageChange = () => {
