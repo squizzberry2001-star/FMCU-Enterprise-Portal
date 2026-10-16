@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { OneGateGrid } from "@/components/OneGateGrid";
 import { LearnerProgress } from "@/components/LearnerProgress";
@@ -16,6 +16,15 @@ import {
   userNotificationsData 
 } from "@/data/portalData";
 import { 
+  getStoredApps, 
+  getStoredCourses, 
+  getStoredEvents, 
+  getStoredDocuments, 
+  getStoredBannerAlert,
+  BannerAlertConfig,
+  initialBannerAlert
+} from "@/lib/storage";
+import { 
   LayoutGrid, 
   BookOpen, 
   Calendar, 
@@ -29,6 +38,34 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [userProfile] = useState(initialUserProfile);
   const [notifications] = useState(userNotificationsData);
+
+  // Dynamic Data from Storage / Admin updates
+  const [apps, setApps] = useState(oneGateAppsData);
+  const [courses, setCourses] = useState(trainingCoursesData);
+  const [events, setEvents] = useState(upcomingEventsData);
+  const [docs, setDocs] = useState(documentItemsData);
+  const [bannerAlert, setBannerAlert] = useState<BannerAlertConfig>(initialBannerAlert);
+
+  useEffect(() => {
+    // Load persisted state from storage
+    setApps(getStoredApps());
+    setCourses(getStoredCourses());
+    setEvents(getStoredEvents());
+    setDocs(getStoredDocuments());
+    setBannerAlert(getStoredBannerAlert());
+
+    // Listen for storage changes across tabs
+    const handleStorageChange = () => {
+      setApps(getStoredApps());
+      setCourses(getStoredCourses());
+      setEvents(getStoredEvents());
+      setDocs(getStoredDocuments());
+      setBannerAlert(getStoredBannerAlert());
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50 font-sans text-slate-800 antialiased">
@@ -74,30 +111,32 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Minimal Alert (Non-intrusive) */}
-        <div className="bg-amber-50/80 border border-amber-200/60 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-amber-900">
-            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>
-              Pelatihan wajib: <strong>HSE Compliance 2026</strong> jatuh tempo <strong>28 Okt 2026</strong>.
-            </span>
+        {/* Minimal Alert (Dynamic from Admin settings) */}
+        {bannerAlert.enabled && (
+          <div className="bg-amber-50/80 border border-amber-200/60 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-amber-900">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                {bannerAlert.title} {bannerAlert.dueDate && <>jatuh tempo <strong>{bannerAlert.dueDate}</strong>.</>}
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveTab("courses")}
+              className="shrink-0 text-amber-700 hover:text-amber-900 font-semibold inline-flex items-center gap-1 hover:underline"
+            >
+              <span>{bannerAlert.linkText || "Buka Modul"}</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
-          <button
-            onClick={() => setActiveTab("courses")}
-            className="shrink-0 text-amber-700 hover:text-amber-900 font-semibold inline-flex items-center gap-1 hover:underline"
-          >
-            <span>Buka Modul</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </div>
+        )}
 
         {/* Intuitive Segmented Navigation Switcher */}
         <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto scrollbar-none">
           {[
-            { id: "apps", label: "Gerbang Aplikasi", icon: LayoutGrid, count: oneGateAppsData.length },
-            { id: "courses", label: "Modul Saya", icon: BookOpen, count: trainingCoursesData.length },
-            { id: "calendar", label: "Jadwal & Kelas", icon: Calendar, count: upcomingEventsData.length },
-            { id: "docs", label: "SOP & Dokumen", icon: FileText, count: documentItemsData.length },
+            { id: "apps", label: "Gerbang Aplikasi", icon: LayoutGrid, count: apps.length },
+            { id: "courses", label: "Modul Saya", icon: BookOpen, count: courses.length },
+            { id: "calendar", label: "Jadwal & Kelas", icon: Calendar, count: events.length },
+            { id: "docs", label: "SOP & Dokumen", icon: FileText, count: docs.length },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -126,19 +165,19 @@ export default function Home() {
         {/* Main Content Area: Focused on One Thing at a Time */}
         <div className="pt-1">
           {activeTab === "apps" && (
-            <OneGateGrid apps={oneGateAppsData} searchQuery={searchQuery} />
+            <OneGateGrid apps={apps} searchQuery={searchQuery} />
           )}
 
           {activeTab === "courses" && (
-            <LearnerProgress courses={trainingCoursesData} />
+            <LearnerProgress courses={courses} />
           )}
 
           {activeTab === "calendar" && (
-            <TrainingCalendar events={upcomingEventsData} />
+            <TrainingCalendar events={events} />
           )}
 
           {activeTab === "docs" && (
-            <KnowledgeBase documents={documentItemsData} />
+            <KnowledgeBase documents={docs} />
           )}
         </div>
 

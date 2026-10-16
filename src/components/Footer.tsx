@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { ShieldCheck, Mail, Phone } from "lucide-react";
+import Link from "next/link";
+import { ShieldCheck, Mail, Phone, Lock } from "lucide-react";
 
 export const Footer: React.FC = () => {
   return (
@@ -26,6 +27,16 @@ export const Footer: React.FC = () => {
           <span className="flex items-center gap-1 text-emerald-600 font-medium">
             <ShieldCheck className="w-3.5 h-3.5" /> SSO Active
           </span>
+          <span className="text-slate-300">•</span>
+          {/* Discreet Admin Link */}
+          <Link
+            href="/admin"
+            className="flex items-center gap-1 text-slate-400 hover:text-slate-700 transition-colors"
+            title="Akses Konsol Admin"
+          >
+            <Lock className="w-3 h-3" />
+            <span>Admin</span>
+          </Link>
         </div>
       </div>
     </footer>
