@@ -76,7 +76,7 @@ export const OneGateGrid: React.FC<OneGateGridProps> = ({ apps }) => {
             <button
               key={cat.id}
               onClick={() => setSelectedTag(cat.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
                 selectedTag === cat.id
                   ? "bg-slate-900 text-white shadow-sm"
                   : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
@@ -88,11 +88,11 @@ export const OneGateGrid: React.FC<OneGateGridProps> = ({ apps }) => {
         </div>
 
         {/* Quick Search */}
-        <div className="relative w-full sm:w-64">
+        <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Cari sistem atau link..."
+            placeholder="Cari sistem atau tautan..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -100,8 +100,8 @@ export const OneGateGrid: React.FC<OneGateGridProps> = ({ apps }) => {
         </div>
       </div>
 
-      {/* Clean Tiles Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Responsive Grid that fills widescreen gracefully */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
         {filtered.map((app) => (
           <a
             key={app.id}

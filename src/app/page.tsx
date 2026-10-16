@@ -33,18 +33,18 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/70 font-sans text-slate-800">
       
-      {/* 1. Clean, Minimalist Header */}
+      {/* 1. Header (Full Width Widescreen) */}
       <Header
         user={userProfile}
         notifications={notifications}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+      {/* Main Content Area (Wide Screen Max 1600px) */}
+      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 py-8 space-y-6">
         
         {/* Simple & Welcoming Hero Section */}
         <div className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm">
-          <div className="space-y-1.5 max-w-xl">
+          <div className="space-y-1.5 max-w-2xl">
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">
               <Sparkles className="w-3.5 h-3.5" />
               <span>One-Gate Learning Portal</span>
@@ -58,26 +58,26 @@ export default function Home() {
           </div>
 
           {/* Understated Metrics */}
-          <div className="flex items-center gap-4 sm:gap-6 self-stretch md:self-auto border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6">
+          <div className="flex items-center gap-6 sm:gap-8 self-stretch md:self-auto border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-8">
             <div>
               <span className="text-[11px] font-medium text-slate-400 block">Kepatuhan Belajar</span>
-              <span className="text-xl font-bold text-slate-900">{userProfile.complianceRate}%</span>
+              <span className="text-2xl font-bold text-slate-900">{userProfile.complianceRate}%</span>
             </div>
-            <div className="h-8 w-px bg-slate-100" />
+            <div className="h-10 w-px bg-slate-100" />
             <div>
               <span className="text-[11px] font-medium text-slate-400 block">Jam Belajar</span>
-              <span className="text-xl font-bold text-blue-600">{userProfile.learningHoursThisYear}h</span>
+              <span className="text-2xl font-bold text-blue-600">{userProfile.learningHoursThisYear}h</span>
             </div>
-            <div className="h-8 w-px bg-slate-100" />
+            <div className="h-10 w-px bg-slate-100" />
             <div>
               <span className="text-[11px] font-medium text-slate-400 block">Sertifikat</span>
-              <span className="text-xl font-bold text-slate-900">{userProfile.certificatesEarned}</span>
+              <span className="text-2xl font-bold text-slate-900">{userProfile.certificatesEarned}</span>
             </div>
           </div>
         </div>
 
-        {/* Minimal Alert if there's a mandatory course pending */}
-        <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-xs">
+        {/* Minimal Alert */}
+        <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl px-5 py-3.5 flex items-center justify-between gap-3 text-xs sm:text-sm">
           <div className="flex items-center gap-2 text-amber-900 font-medium">
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
@@ -86,7 +86,7 @@ export default function Home() {
           </div>
           <button
             onClick={() => setActiveTab("courses")}
-            className="shrink-0 text-amber-700 hover:text-amber-900 font-semibold inline-flex items-center gap-1 hover:underline"
+            className="shrink-0 text-amber-700 hover:text-amber-900 font-semibold inline-flex items-center gap-1 hover:underline text-xs"
           >
             <span>Lihat Modul</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -94,7 +94,7 @@ export default function Home() {
         </div>
 
         {/* Intuitive Segmented Tabs Bar */}
-        <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-2.5 border-b border-slate-200/80 pb-3 overflow-x-auto scrollbar-none">
           {[
             { id: "apps", label: "Aplikasi & Sistem", icon: LayoutGrid, count: oneGateAppsData.length },
             { id: "courses", label: "Pelatihan Saya", icon: BookOpen, count: trainingCoursesData.length },
@@ -125,7 +125,7 @@ export default function Home() {
           })}
         </div>
 
-        {/* Dynamic Tab View (Clean, Single Purpose at a Time) */}
+        {/* Dynamic Tab View */}
         <div className="pt-2">
           {activeTab === "apps" && (
             <OneGateGrid apps={oneGateAppsData} />
@@ -146,7 +146,7 @@ export default function Home() {
 
       </main>
 
-      {/* Clean & Simple Footer */}
+      {/* Footer */}
       <Footer />
 
     </div>

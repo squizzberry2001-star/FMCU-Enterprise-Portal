@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldCheck, Bell, ChevronDown, User } from "lucide-react";
+import { ShieldCheck, Bell } from "lucide-react";
 import { UserProfile, UserNotification } from "@/types";
 
 interface HeaderProps {
@@ -14,8 +14,8 @@ export const Header: React.FC<HeaderProps> = ({ user, notifications }) => {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40 w-full">
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-8 lg:px-12 h-16 flex items-center justify-between">
         
         {/* Brand */}
         <div className="flex items-center gap-3">
@@ -23,18 +23,18 @@ export const Header: React.FC<HeaderProps> = ({ user, notifications }) => {
             FM
           </div>
           <div className="flex items-center gap-2.5">
-            <span className="font-bold text-slate-900 text-base tracking-tight">
+            <span className="font-bold text-slate-900 text-base sm:text-lg tracking-tight">
               FMCU <span className="font-normal text-slate-500">Learning Center</span>
             </span>
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              One Gate SSO
+              One Gate SSO Aktif
             </span>
           </div>
         </div>
 
         {/* Right: Notif & User */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-3 sm:gap-4">
           
           {/* Notifications */}
           <div className="relative">
@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({ user, notifications }) => {
           <div className="h-5 w-px bg-slate-200" />
 
           {/* User Profile */}
-          <div className="flex items-center gap-2 pl-1">
+          <div className="flex items-center gap-2.5 pl-1">
             <img
               src={user.avatarUrl}
               alt={user.name}
