@@ -60,7 +60,10 @@ import {
   Link2,
   Cloud,
   RefreshCw,
-  Database
+  Database,
+  Copy,
+  ImageIcon,
+  Download
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -113,6 +116,23 @@ export default function AdminPage() {
   // Doc File Upload State
   const [selectedDocFile, setSelectedDocFile] = useState<{ file: File; base64: string } | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+
+  // App Icon Upload State
+  const [selectedIconFile, setSelectedIconFile] = useState<{ file: File; base64: string } | null>(null);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+
+  // Universal Drive Uploader State (Any photo, file, video, archive)
+  const [universalFile, setUniversalFile] = useState<{ file: File; base64: string } | null>(null);
+  const [isUniversalUploading, setIsUniversalUploading] = useState(false);
+  const [universalUploadResult, setUniversalUploadResult] = useState<{
+    fileId: string;
+    fileName: string;
+    mimeType?: string;
+    downloadUrl?: string;
+    viewUrl?: string;
+    directImageUrl?: string;
+  } | null>(null);
+  const [copiedUrlType, setCopiedUrlType] = useState<string | null>(null);
 
   // Load Data on Mount
   useEffect(() => {
@@ -212,10 +232,37 @@ export default function AdminPage() {
   };
 
   // ==================== APP CRUD ====================
-  const handleSaveApp = (appData: Partial<OneGateApp>) => {
+  const handleSaveApp = async (appData: Partial<OneGateApp>) => {
+    let finalIconUrl: string | null | undefined = customIconPreview;
+
+    // Upload custom icon to Google Drive if selected and cloud is configured
+    if (selectedIconFile && getGasApiUrl()) {
+      setIsUploadingIcon(true);
+      showToast("Mengunggah ikon sistem ke Google Drive...");
+      try {
+        const uploadRes = await uploadFileToGoogleDrive({
+          fileName: `icon_${Date.now()}_${selectedIconFile.file.name}`,
+          fileBase64: selectedIconFile.base64,
+          mimeType: selectedIconFile.file.type || "image/png"
+        });
+        if (uploadRes.success && (uploadRes.directImageUrl || uploadRes.downloadUrl)) {
+          finalIconUrl = uploadRes.directImageUrl || uploadRes.downloadUrl || null;
+          showToast("Ikon berhasil disimpan ke Google Drive!");
+        }
+      } catch (e) {
+        console.error("Icon upload error:", e);
+      } finally {
+        setIsUploadingIcon(false);
+      }
+    }
+
     let updated: OneGateApp[];
     if (editingApp) {
-      updated = apps.map((a) => (a.id === editingApp.id ? { ...a, ...appData } as OneGateApp : a));
+      updated = apps.map((a) => (a.id === editingApp.id ? { 
+        ...a, 
+        ...appData,
+        customIconUrl: finalIconUrl || a.customIconUrl
+      } as OneGateApp : a));
       showToast("Link sistem berhasil diperbarui!");
     } else {
       const newApp: OneGateApp = {
@@ -226,7 +273,7 @@ export default function AdminPage() {
         categoryLabel: appData.categoryLabel || "Sistem",
         url: appData.url || "https://",
         iconName: appData.iconName || "GraduationCap",
-        customIconUrl: appData.customIconUrl,
+        customIconUrl: finalIconUrl || undefined,
         ssoSupported: appData.ssoSupported ?? true,
         status: appData.status || "online",
         tags: appData.tags || ["internal"],
@@ -241,6 +288,7 @@ export default function AdminPage() {
     setAppModalOpen(false);
     setEditingApp(null);
     setCustomIconPreview(null);
+    setSelectedIconFile(null);
   };
 
   const handleDeleteApp = (id: string) => {
@@ -336,6 +384,7 @@ export default function AdminPage() {
   const handleSaveDocument = async (docData: Partial<DocumentItem>) => {
     let finalDocUrl = docData.downloadUrl || "#";
     let gdriveId: string | undefined = undefined;
+    let viewUrl: string | undefined = undefined;
 
     // Upload to Google Drive if file selected and GAS configured
     if (selectedDocFile && getGasApiUrl()) {
@@ -345,12 +394,13 @@ export default function AdminPage() {
         const uploadRes = await uploadFileToGoogleDrive({
           fileName: selectedDocFile.file.name,
           fileBase64: selectedDocFile.base64,
-          mimeType: selectedDocFile.file.type || "application/pdf"
+          mimeType: selectedDocFile.file.type || "application/octet-stream"
         });
-        if (uploadRes.success && uploadRes.downloadUrl) {
-          finalDocUrl = uploadRes.downloadUrl;
+        if (uploadRes.success) {
+          finalDocUrl = uploadRes.downloadUrl || uploadRes.directImageUrl || "#";
           gdriveId = uploadRes.fileId;
-          showToast("File berhasil disimpan ke Google Drive!");
+          viewUrl = uploadRes.viewUrl;
+          showToast("File/Foto berhasil disimpan ke Google Drive!");
         }
       } catch (err) {
         console.error("Gdrive upload error:", err);
@@ -365,18 +415,21 @@ export default function AdminPage() {
         ...d, 
         ...docData, 
         downloadUrl: finalDocUrl,
-        ...(gdriveId ? { gdriveFileId: gdriveId } : {})
+        ...(gdriveId ? { gdriveFileId: gdriveId } : {}),
+        ...(viewUrl ? { viewUrl } : {})
       } as DocumentItem : d));
       showToast("Dokumen berhasil diperbarui!");
     } else {
       const newDoc: DocumentItem = {
         id: "doc-" + Date.now(),
-        title: docData.title || "Dokumen SOP Baru",
+        title: docData.title || "File/Dokumen Baru",
         category: docData.category || "SOP",
         format: docData.format || "PDF",
-        size: docData.size || "1.5 MB",
+        size: docData.size || "1.0 MB",
         updatedAt: new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
-        downloadUrl: finalDocUrl
+        downloadUrl: finalDocUrl,
+        ...(gdriveId ? { gdriveFileId: gdriveId } : {}),
+        ...(viewUrl ? { viewUrl } : {})
       };
       updated = [newDoc, ...docs];
       showToast("Dokumen baru berhasil disimpan!");
@@ -1050,6 +1103,254 @@ export default function AdminPage() {
               </div>
             </div>
             
+            {/* Universal Google Drive File & Photo Uploader */}
+            <div className="md:col-span-2 bg-slate-800/60 border border-slate-700/80 rounded-xl p-5 space-y-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/70 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Drive Uploader: Foto, Video, Dokumen, atau Format Apapun</span>
+                      <span className="text-[10px] bg-blue-900/60 text-blue-300 border border-blue-700 px-2 py-0.5 rounded-full font-medium">
+                        Google Apps Script Drive API
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Simpan file langsung ke Google Drive. Dapatkan link CDN foto langsung untuk logo/web, link unduh, atau arsipkan ke dokumen.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Uploader Input Box */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                <div className="space-y-3">
+                  <div className="p-4 border-2 border-dashed border-slate-700 hover:border-blue-500/60 transition-colors rounded-xl text-center bg-slate-900/60">
+                    <Upload className="w-7 h-7 text-slate-400 mx-auto mb-2" />
+                    <p className="text-xs text-slate-200 font-semibold">Pilih Foto, Video, Dokumen, atau Arsip</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Menerima PNG, JPG, SVG, WebP, PDF, DOCX, XLSX, PPTX, MP4, ZIP, dsb.</p>
+                    
+                    <input
+                      type="file"
+                      accept="*/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (evt) => {
+                            const base64 = evt.target?.result as string;
+                            setUniversalFile({ file, base64 });
+                            setUniversalUploadResult(null);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="mt-3 text-xs text-slate-400 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
+                    />
+
+                    {universalFile && (
+                      <div className="mt-3 p-2 bg-slate-800/80 border border-slate-700 rounded-lg text-left flex items-center justify-between text-xs">
+                        <div className="truncate mr-2">
+                          <p className="font-semibold text-white truncate">{universalFile.file.name}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {(universalFile.file.size / (1024 * 1024)).toFixed(2)} MB • {universalFile.file.type || "Format file"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUniversalFile(null);
+                            setUniversalUploadResult(null);
+                          }}
+                          className="text-slate-400 hover:text-rose-400 text-xs px-2 py-0.5 shrink-0"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!universalFile || isUniversalUploading}
+                    onClick={async () => {
+                      if (!universalFile) return;
+                      if (!gasUrl) {
+                        alert("Harap masukkan dan tes koneksi URL Google Apps Script terlebih dahulu!");
+                        return;
+                      }
+                      setIsUniversalUploading(true);
+                      try {
+                        const res = await uploadFileToGoogleDrive({
+                          fileName: universalFile.file.name,
+                          fileBase64: universalFile.base64,
+                          mimeType: universalFile.file.type || "application/octet-stream"
+                        });
+                        if (res.success && res.fileId) {
+                          setUniversalUploadResult({
+                            fileId: res.fileId,
+                            fileName: universalFile.file.name,
+                            mimeType: res.mimeType,
+                            downloadUrl: res.downloadUrl,
+                            viewUrl: res.viewUrl,
+                            directImageUrl: res.directImageUrl
+                          });
+                          showToast("File/Foto berhasil disimpan ke Google Drive!");
+                        } else {
+                          alert("Gagal mengunggah ke Google Drive: " + res.error);
+                        }
+                      } catch (err: any) {
+                        alert("Error saat mengunggah: " + err.message);
+                      } finally {
+                        setIsUniversalUploading(false);
+                      }
+                    }}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm"
+                  >
+                    {isUniversalUploading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Mengunggah ke Google Drive...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        <span>Upload File ke Google Drive</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Upload Result / Actions Card */}
+                <div className="bg-slate-900/70 border border-slate-700/80 rounded-xl p-4 min-h-[170px] flex flex-col justify-between">
+                  {universalUploadResult ? (
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                            <Check className="w-4 h-4" />
+                          </div>
+                          <div className="truncate">
+                            <p className="text-xs font-bold text-white truncate">{universalUploadResult.fileName}</p>
+                            <p className="text-[10px] text-emerald-400 font-medium">Tersimpan di Google Drive • Siap digunakan</p>
+                          </div>
+                        </div>
+                        {universalUploadResult.directImageUrl && (
+                          <div className="w-10 h-10 rounded-lg bg-slate-800 border border-slate-700 overflow-hidden shrink-0">
+                            <img
+                              src={universalUploadResult.directImageUrl}
+                              alt="Uploaded Preview"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* URL Options */}
+                      <div className="space-y-2 text-xs pt-1">
+                        {universalUploadResult.directImageUrl && (
+                          <div className="p-2 bg-slate-950/80 border border-slate-800 rounded-lg flex items-center justify-between gap-2">
+                            <div className="truncate">
+                              <span className="text-[10px] text-slate-400 block font-semibold">Link Foto / Direct CDN URL (untuk logo & gambar web):</span>
+                              <span className="text-[11px] text-blue-400 font-mono truncate block">{universalUploadResult.directImageUrl}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(universalUploadResult.directImageUrl || "");
+                                setCopiedUrlType("image");
+                                showToast("Link foto berhasil disalin!");
+                                setTimeout(() => setCopiedUrlType(null), 2000);
+                              }}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[11px] flex items-center gap-1 shrink-0 font-medium"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>{copiedUrlType === "image" ? "Disalin!" : "Salin"}</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {universalUploadResult.downloadUrl && (
+                          <div className="p-2 bg-slate-950/80 border border-slate-800 rounded-lg flex items-center justify-between gap-2">
+                            <div className="truncate">
+                              <span className="text-[10px] text-slate-400 block font-semibold">Link Unduh Langsung (Direct Download):</span>
+                              <span className="text-[11px] text-emerald-400 font-mono truncate block">{universalUploadResult.downloadUrl}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(universalUploadResult.downloadUrl || "");
+                                setCopiedUrlType("download");
+                                showToast("Link unduh berhasil disalin!");
+                                setTimeout(() => setCopiedUrlType(null), 2000);
+                              }}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[11px] flex items-center gap-1 shrink-0 font-medium"
+                            >
+                              <Copy className="w-3 h-3" />
+                              <span>{copiedUrlType === "download" ? "Disalin!" : "Salin"}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Quick Actions */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+                        {universalUploadResult.viewUrl && (
+                          <a
+                            href={universalUploadResult.viewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-medium flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Buka di Google Drive</span>
+                          </a>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const isImg = universalUploadResult.mimeType?.startsWith("image/");
+                            const ext = universalUploadResult.fileName.split('.').pop()?.toUpperCase() || "PDF";
+                            const newDoc: DocumentItem = {
+                              id: "doc-" + Date.now(),
+                              title: universalUploadResult.fileName.replace(/\.[^/.]+$/, ""),
+                              category: isImg ? "Foto / Dokumentasi" : "SOP",
+                              format: ext,
+                              size: universalFile ? `${(universalFile.file.size / (1024 * 1024)).toFixed(1)} MB` : "1.0 MB",
+                              updatedAt: new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }),
+                              downloadUrl: universalUploadResult.downloadUrl || "#",
+                              viewUrl: universalUploadResult.viewUrl,
+                              gdriveFileId: universalUploadResult.fileId
+                            };
+                            const updated = [newDoc, ...docs];
+                            setDocs(updated);
+                            saveStoredDocuments(updated);
+                            triggerBackgroundCloudSync(apps, courses, events, updated, bannerAlert);
+                            showToast("File berhasil dimasukkan ke daftar SOP / Dokumen!");
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Jadikan Dokumen SOP Portal</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500 space-y-1">
+                      <Upload className="w-6 h-6 opacity-40 mb-1" />
+                      <p className="text-xs font-medium text-slate-400">Belum ada file yang di-upload</p>
+                      <p className="text-[11px] text-slate-500 max-w-xs">
+                        Pilih file di sebelah kiri dan klik tombol upload untuk menyimpan ke Google Drive dan mendapatkan link CDN langsung.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
             {/* Banner Reminder Settings */}
             <div className="bg-slate-800/50 border border-slate-800 rounded-xl p-5 space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1263,13 +1564,15 @@ export default function AdminPage() {
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          if (file.size > 2 * 1024 * 1024) {
-                            alert("Ukuran gambar maksimal 2MB!");
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert("Ukuran gambar maksimal 5MB!");
                             return;
                           }
                           const reader = new FileReader();
                           reader.onload = (uploadEvt) => {
-                            setCustomIconPreview(uploadEvt.target?.result as string);
+                            const base64 = uploadEvt.target?.result as string;
+                            setCustomIconPreview(base64);
+                            setSelectedIconFile({ file, base64 });
                           };
                           reader.readAsDataURL(file);
                         }
@@ -1277,14 +1580,23 @@ export default function AdminPage() {
                       className="text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
                     />
                     <p className="text-[10px] text-slate-500">
-                      Upload logo asli aplikasi. Logo akan langsung tampil di kartu sistem.
+                      Upload logo asli aplikasi. Logo akan otomatis diunggah ke Google Drive dan langsung tampil di kartu sistem.
                     </p>
+                    {selectedIconFile && (
+                      <p className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        {gasUrl ? "Ikon/Logo akan disimpan ke Google Drive" : "Ikon siap disimpan"}
+                      </p>
+                    )}
                   </div>
 
                   {customIconPreview && (
                     <button
                       type="button"
-                      onClick={() => setCustomIconPreview(null)}
+                      onClick={() => {
+                        setCustomIconPreview(null);
+                        setSelectedIconFile(null);
+                      }}
                       className="px-2.5 py-1 text-[11px] bg-rose-950/80 border border-rose-800 text-rose-300 hover:bg-rose-900 rounded-lg transition-colors shrink-0 font-medium"
                     >
                       Hapus
@@ -1331,16 +1643,22 @@ export default function AdminPage() {
               <div className="pt-4 flex items-center justify-end gap-2 border-t border-slate-700">
                 <button
                   type="button"
-                  onClick={() => setAppModalOpen(false)}
-                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg font-medium"
+                  onClick={() => {
+                    setAppModalOpen(false);
+                    setSelectedIconFile(null);
+                  }}
+                  disabled={isUploadingIcon}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-300 rounded-lg font-medium"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold"
+                  disabled={isUploadingIcon}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg font-semibold flex items-center gap-1.5"
                 >
-                  Simpan Link
+                  {isUploadingIcon && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isUploadingIcon ? "Menyimpan ke Drive..." : "Simpan Link"}</span>
                 </button>
               </div>
             </form>
@@ -1634,17 +1952,18 @@ export default function AdminPage() {
               {/* File picker that automatically extracts file details */}
               <div className="p-4 border-2 border-dashed border-slate-700 rounded-xl text-center bg-slate-900/50">
                 <Upload className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-                <p className="text-xs text-slate-300 font-medium">Pilih file dari komputer Anda</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Mendukung PDF, PPTX, DOCX, XLSX</p>
+                <p className="text-xs text-slate-300 font-medium">Pilih file / foto dari komputer Anda</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">Mendukung Foto (PNG, JPG, SVG), Dokumen (PDF, DOCX, XLSX, PPTX), Video (MP4), ZIP, dll</p>
                 <input
                   type="file"
-                  accept=".pdf,.docx,.pptx,.xlsx"
+                  accept="*/*"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
                       const titleInput = document.querySelector('input[name="title"]') as HTMLInputElement;
                       const sizeInput = document.querySelector('input[name="size"]') as HTMLInputElement;
                       const formatSelect = document.querySelector('select[name="format"]') as HTMLSelectElement;
+                      const categorySelect = document.querySelector('select[name="category"]') as HTMLSelectElement;
                       if (titleInput && !titleInput.value) {
                         titleInput.value = file.name.replace(/\.[^/.]+$/, "");
                       }
@@ -1652,11 +1971,16 @@ export default function AdminPage() {
                         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
                         sizeInput.value = `${sizeMB} MB`;
                       }
+                      const ext = file.name.split(".").pop()?.toUpperCase() || "";
                       if (formatSelect) {
-                        const ext = file.name.split(".").pop()?.toUpperCase();
-                        if (ext === "PDF" || ext === "PPTX" || ext === "DOCX" || ext === "XLSX") {
-                          formatSelect.value = ext;
+                        if (["PDF", "DOCX", "PPTX", "XLSX", "PNG", "JPG", "JPEG", "SVG", "ZIP", "MP4"].includes(ext)) {
+                          formatSelect.value = ext === "JPEG" ? "JPG" : ext;
+                        } else {
+                          formatSelect.value = "LAINNYA";
                         }
+                      }
+                      if (categorySelect && (ext === "PNG" || ext === "JPG" || ext === "JPEG" || ext === "SVG")) {
+                        categorySelect.value = "Foto / Dokumentasi";
                       }
                       // Read file as Base64 for Google Drive cloud storage
                       const reader = new FileReader();
@@ -1694,7 +2018,7 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Judul Dokumen</label>
+                <label className="block text-slate-400 mb-1">Judul Dokumen / Nama File</label>
                 <input
                   name="title"
                   defaultValue={editingDoc?.title || ""}
@@ -1706,7 +2030,7 @@ export default function AdminPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Kategori Dokumen</label>
+                  <label className="block text-slate-400 mb-1">Kategori Dokumen / File</label>
                   <select
                     name="category"
                     defaultValue={editingDoc?.category || "SOP"}
@@ -1716,6 +2040,9 @@ export default function AdminPage() {
                     <option value="Manual Guide">Panduan Sistem (Manual)</option>
                     <option value="Modul Pelatihan">Slide Materi Pelatihan</option>
                     <option value="Kebijakan Perusahaan">Kebijakan Perusahaan</option>
+                    <option value="Foto / Dokumentasi">Foto / Dokumentasi Kegiatan</option>
+                    <option value="Template Dokumen">Template Dokumen & Form</option>
+                    <option value="Lainnya">Lainnya</option>
                   </select>
                 </div>
                 <div>
@@ -1725,10 +2052,16 @@ export default function AdminPage() {
                     defaultValue={editingDoc?.format || "PDF"}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
                   >
-                    <option value="PDF">PDF</option>
-                    <option value="DOCX">DOCX</option>
-                    <option value="PPTX">PPTX</option>
-                    <option value="XLSX">XLSX</option>
+                    <option value="PDF">PDF (Dokumen)</option>
+                    <option value="DOCX">DOCX (Word)</option>
+                    <option value="PPTX">PPTX (Presentasi)</option>
+                    <option value="XLSX">XLSX (Excel)</option>
+                    <option value="PNG">PNG (Gambar / Logo)</option>
+                    <option value="JPG">JPG / JPEG (Foto)</option>
+                    <option value="SVG">SVG (Grafis Vektor)</option>
+                    <option value="ZIP">ZIP / RAR (Arsip)</option>
+                    <option value="MP4">MP4 (Video)</option>
+                    <option value="LAINNYA">Format Lainnya</option>
                   </select>
                 </div>
               </div>

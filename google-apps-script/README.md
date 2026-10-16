@@ -67,3 +67,17 @@ Skrip `Code.gs` secara otomatis akan mengelola 5 sheet tabel:
    - Klik tombol **"Tes Koneksi"** (Indikator akan berubah menjadi hijau: `🟢 Terhubung`).
    - Klik tombol **"Sinkronkan Data ke Google Sheets"**.
 5. Selesai! Kini seluruh perubahan link sistem, modul, jadwal, dan dokumen tersimpan permanen di Google Sheets & Google Drive dan langsung terlihat sama persis di seluruh laptop maupun HP karyawan!
+
+---
+
+## 📸 Penyimpanan Foto, Dokumen, dan Format Apapun di Google Drive
+
+Skrip `Code.gs` telah dilengkapi fitur penyimpanan file universal:
+- **Folder Otomatis**: Semua file otomatis tersimpan di dalam folder Google Drive bernama **`FMCU_Enterprise_Storage`** (folder dibuat otomatis bila belum ada).
+- **Semua Format Didukung**:
+  - Foto & Gambar: PNG, JPG, JPEG, SVG, WebP, ICO, BMP
+  - Dokumen Kerja: PDF, DOCX, XLSX, PPTX, TXT, CSV
+  - Media & Arsip: MP4, MP3, ZIP, RAR, 7Z
+- **Link CDN Gambar Langsung (`directImageUrl`)**: Format `https://lh3.googleusercontent.com/d/{fileId}` yang memungkinkan foto logo aplikasi atau dokumentasi langsung tampil di elemen `<img>` tanpa terhambat CORS atau redirect Google Drive.
+- **Link Unduhan Otomatis (`downloadUrl`)**: Format `https://drive.google.com/uc?export=download&id={fileId}` untuk pengunduhan instan dokumen SOP oleh karyawan.
+- **Akses Publik Otomatis**: File otomatis diset dengan izin `ANYONE_WITH_LINK: VIEW` sehingga seluruh perangkat staf dapat melihat atau mengunduh file tanpa perlu meminta izin akses manual.

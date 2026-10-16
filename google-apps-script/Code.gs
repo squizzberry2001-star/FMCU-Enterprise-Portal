@@ -133,44 +133,99 @@ function doPost(e) {
       return responseJSON({ success: true, message: "Seluruh data berhasil disinkronkan ke Google Sheets!" });
     }
 
-    // 2. Upload File to Google Drive
+    // 2. Upload File, Photo, or Any Asset to Google Drive
     if (action === "uploadFile") {
-      const fileName = payload.fileName || ("Document_" + Date.now() + ".pdf");
-      const base64Data = payload.fileBase64; // data:application/pdf;base64,.... or raw base64
-      const mimeType = payload.mimeType || "application/pdf";
-      const folderId = payload.folderId || ""; // Optional target folder
+      const fileName = payload.fileName || ("Asset_" + Date.now() + ".dat");
+      const base64Data = payload.fileBase64;
+      let mimeType = payload.mimeType || "application/octet-stream";
+      const folderId = payload.folderId || "";
 
       if (!base64Data) {
         return responseJSON({ success: false, error: "fileBase64 wajib diisi" });
       }
 
-      // Strip header data URI if present
-      const cleanBase64 = base64Data.replace(/^data:.*,/, "");
+      // Deteksi otomatis tipe MIME dari ekstensi file jika belum terdefinisi spesifik
+      const ext = (fileName.split('.').pop() || '').toLowerCase();
+      const mimeTypes = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml',
+        'webp': 'image/webp',
+        'ico': 'image/x-icon',
+        'bmp': 'image/bmp',
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'zip': 'application/zip',
+        'rar': 'application/x-rar-compressed',
+        '7z': 'application/x-7z-compressed',
+        'tar': 'application/x-tar',
+        'mp4': 'video/mp4',
+        'mp3': 'audio/mpeg',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'json': 'application/json'
+      };
+      if (mimeTypes[ext]) {
+        mimeType = mimeTypes[ext];
+      }
+
+      // Bersihkan prefix base64 data URI (misal: data:image/png;base64,....)
+      const cleanBase64 = base64Data.replace(/^data:.*?;base64,/, "");
       const decodedBytes = Utilities.base64Decode(cleanBase64);
       const blob = Utilities.newBlob(decodedBytes, mimeType, fileName);
 
-      let file;
+      // Tentukan folder penyimpanan: Folder custom ID atau folder otomatis "FMCU_Enterprise_Storage"
+      let targetFolder;
       if (folderId && folderId.trim() !== "") {
-        const folder = DriveApp.getFolderById(folderId.trim());
-        file = folder.createFile(blob);
-      } else {
-        file = DriveApp.createFile(blob);
+        try {
+          targetFolder = DriveApp.getFolderById(folderId.trim());
+        } catch (e) {
+          targetFolder = null;
+        }
+      }
+      if (!targetFolder) {
+        const defaultFolderName = "FMCU_Enterprise_Storage";
+        const folders = DriveApp.getFoldersByName(defaultFolderName);
+        if (folders.hasNext()) {
+          targetFolder = folders.next();
+        } else {
+          targetFolder = DriveApp.createFolder(defaultFolderName);
+          targetFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        }
       }
 
-      // Set permission so employees can download/view
+      const file = targetFolder.createFile(blob);
+      // Hak akses publik (View): Seluruh karyawan di berbagai perangkat dapat mengunduh / melihat gambar
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
       const fileId = file.getId();
+      // Link unduhan langsung (direct download untuk PDF/DOCX/ZIP/dll)
       const downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
-      const viewUrl = file.getUrl();
+      // Link preview interaktif Google Drive viewer
+      const viewUrl = "https://drive.google.com/file/d/" + fileId + "/view";
+      // Direct CDN image URL (Bisa langsung dipasang di <img src="..." /> tanpa terblokir CORS/redirect)
+      const directImageUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+      // Thumbnail ukuran kecil
+      const thumbnailUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w400";
 
       return responseJSON({
         success: true,
-        message: "File berhasil diunggah ke Google Drive!",
+        message: "File/Foto berhasil disimpan ke Google Drive!",
         fileId: fileId,
         fileName: fileName,
+        mimeType: mimeType,
+        fileSize: file.getSize(),
         downloadUrl: downloadUrl,
-        viewUrl: viewUrl
+        viewUrl: viewUrl,
+        directImageUrl: directImageUrl,
+        thumbnailUrl: thumbnailUrl
       });
     }
 

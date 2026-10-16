@@ -54,11 +54,13 @@ export interface CalendarEvent {
 export interface DocumentItem {
   id: string;
   title: string;
-  category: "SOP" | "Manual Guide" | "Modul Pelatihan" | "Kebijakan Perusahaan";
-  format: "PDF" | "PPTX" | "DOCX" | "XLSX";
+  category: "SOP" | "Manual Guide" | "Modul Pelatihan" | "Kebijakan Perusahaan" | "Foto / Dokumentasi" | "Template Dokumen" | "Lainnya" | string;
+  format: "PDF" | "PPTX" | "DOCX" | "XLSX" | "PNG" | "JPG" | "SVG" | "ZIP" | "VIDEO" | string;
   size: string;
   updatedAt: string;
   downloadUrl: string;
+  viewUrl?: string;
+  gdriveFileId?: string;
 }
 
 export interface UserNotification {

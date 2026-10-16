@@ -152,7 +152,17 @@ export async function uploadFileToGoogleDrive(params: {
   fileName: string;
   fileBase64: string;
   mimeType: string;
-}): Promise<{ success: boolean; downloadUrl?: string; viewUrl?: string; fileId?: string; error?: string }> {
+}): Promise<{ 
+  success: boolean; 
+  downloadUrl?: string; 
+  viewUrl?: string; 
+  directImageUrl?: string; 
+  thumbnailUrl?: string; 
+  fileId?: string; 
+  fileSize?: number; 
+  mimeType?: string; 
+  error?: string 
+}> {
   const url = getGasApiUrl();
   if (!url) {
     return { success: false, error: "URL Google Apps Script belum dikonfigurasi." };
@@ -181,7 +191,11 @@ export async function uploadFileToGoogleDrive(params: {
         success: true,
         downloadUrl: result.downloadUrl,
         viewUrl: result.viewUrl,
+        directImageUrl: result.directImageUrl,
+        thumbnailUrl: result.thumbnailUrl,
         fileId: result.fileId,
+        fileSize: result.fileSize,
+        mimeType: result.mimeType,
       };
     }
     return { success: false, error: result.error || "Gagal mengunggah file ke Google Drive." };
