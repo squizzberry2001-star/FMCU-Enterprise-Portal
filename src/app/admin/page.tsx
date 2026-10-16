@@ -71,6 +71,7 @@ export default function AdminPage() {
   // Modal & Form States
   const [appModalOpen, setAppModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState<OneGateApp | null>(null);
+  const [customIconPreview, setCustomIconPreview] = useState<string | null>(null);
 
   const [courseModalOpen, setCourseModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<TrainingCourse | null>(null);
@@ -143,6 +144,7 @@ export default function AdminPage() {
         categoryLabel: appData.categoryLabel || "Sistem",
         url: appData.url || "https://",
         iconName: appData.iconName || "GraduationCap",
+        customIconUrl: appData.customIconUrl,
         ssoSupported: appData.ssoSupported ?? true,
         status: appData.status || "online",
         tags: appData.tags || ["internal"],
@@ -155,6 +157,7 @@ export default function AdminPage() {
     saveStoredApps(updated);
     setAppModalOpen(false);
     setEditingApp(null);
+    setCustomIconPreview(null);
   };
 
   const handleDeleteApp = (id: string) => {
@@ -478,6 +481,7 @@ export default function AdminPage() {
               <button
                 onClick={() => {
                   setEditingApp(null);
+                  setCustomIconPreview(null);
                   setAppModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all self-start sm:self-auto shadow-sm"
@@ -504,8 +508,19 @@ export default function AdminPage() {
                   {apps.map((app) => (
                     <tr key={app.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4">
-                        <div className="font-semibold text-white">{app.name}</div>
-                        <div className="text-[11px] text-slate-500 truncate max-w-xs">{app.shortDesc}</div>
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700/80 flex items-center justify-center shrink-0 p-1 overflow-hidden shadow-inner">
+                            {app.customIconUrl ? (
+                              <img src={app.customIconUrl} alt={app.name} className="w-full h-full object-contain" />
+                            ) : (
+                              <LayoutGrid className="w-4 h-4 text-blue-400" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-white">{app.name}</div>
+                            <div className="text-[11px] text-slate-500 truncate max-w-xs">{app.shortDesc}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-[11px] text-blue-300">
                         {app.category}
@@ -539,6 +554,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => {
                               setEditingApp(app);
+                              setCustomIconPreview(app.customIconUrl || null);
                               setAppModalOpen(true);
                             }}
                             className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
@@ -848,7 +864,8 @@ export default function AdminPage() {
                   category: (form.elements.namedItem("category") as HTMLSelectElement).value as any,
                   categoryLabel: (form.elements.namedItem("categoryLabel") as HTMLInputElement).value,
                   url: (form.elements.namedItem("url") as HTMLInputElement).value,
-                  iconName: (form.elements.namedItem("iconName") as HTMLSelectElement).value,
+                  iconName: (form.elements.namedItem("iconName") as HTMLSelectElement)?.value || editingApp?.iconName || "GraduationCap",
+                  customIconUrl: customIconPreview || undefined,
                   ssoSupported: (form.elements.namedItem("ssoSupported") as HTMLInputElement).checked,
                   status: (form.elements.namedItem("status") as HTMLSelectElement).value as any,
                 });
@@ -915,37 +932,99 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1">Ikon Tampilan</label>
-                  <select
-                    name="iconName"
-                    defaultValue={editingApp?.iconName || "GraduationCap"}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                  >
-                    <option value="GraduationCap">Topi Wisuda (LMS)</option>
-                    <option value="Video">Kamera Video (Teams/Zoom)</option>
-                    <option value="FileSpreadsheet">Lembar Ujian (Assessment)</option>
-                    <option value="Award">Piala / Medali (Sertifikat)</option>
-                    <option value="BookOpen">Buku Terbuka (Library)</option>
-                    <option value="Target">Target Panah (Skill Matrix)</option>
-                    <option value="FolderGit2">Folder Dokumen (SOP)</option>
-                    <option value="Cpu">Chip / Simulasi (VR Lab)</option>
-                  </select>
+              <div>
+                <label className="block text-slate-400 mb-1">Status Sistem</label>
+                <select
+                  name="status"
+                  defaultValue={editingApp?.status || "online"}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                >
+                  <option value="online">Online (Siap Akses)</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="restricted">Khusus Jaringan Kantor</option>
+                </select>
+              </div>
+
+              {/* Upload Ikon Manual (PNG, ICO, SVG) */}
+              <div className="p-3.5 bg-slate-900/90 border border-slate-700 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-slate-200 font-semibold text-xs">
+                    Ikon Tampilan Aplikasi (Upload PNG, ICO, SVG)
+                  </label>
+                  <span className="text-[10px] text-blue-400 font-medium">PNG, ICO, SVG, WebP (Maks 2MB)</span>
                 </div>
 
-                <div>
-                  <label className="block text-slate-400 mb-1">Status Sistem</label>
-                  <select
-                    name="status"
-                    defaultValue={editingApp?.status || "online"}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                  >
-                    <option value="online">Online (Siap Akses)</option>
-                    <option value="maintenance">Maintenance</option>
-                    <option value="restricted">Khusus Jaringan Kantor</option>
-                  </select>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-slate-800 border border-slate-600 flex items-center justify-center shrink-0 p-1.5 overflow-hidden shadow-inner">
+                    {customIconPreview ? (
+                      <img
+                        src={customIconPreview}
+                        alt="Preview Ikon"
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <Upload className="w-5 h-5 text-slate-500" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-1">
+                    <input
+                      type="file"
+                      accept=".png,.ico,.svg,.jpg,.jpeg,.webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 2 * 1024 * 1024) {
+                            alert("Ukuran gambar maksimal 2MB!");
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = (uploadEvt) => {
+                            setCustomIconPreview(uploadEvt.target?.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                      Upload logo asli aplikasi. Logo akan langsung tampil di kartu sistem.
+                    </p>
+                  </div>
+
+                  {customIconPreview && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomIconPreview(null)}
+                      className="px-2.5 py-1 text-[11px] bg-rose-950/80 border border-rose-800 text-rose-300 hover:bg-rose-900 rounded-lg transition-colors shrink-0 font-medium"
+                    >
+                      Hapus
+                    </button>
+                  )}
                 </div>
+
+                {/* Alternatif: Dropdown Ikon Bawaan jika tidak upload gambar */}
+                {!customIconPreview && (
+                  <div className="pt-2 border-t border-slate-800">
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Atau pilih ikon bawaan sistem (Default Icon)
+                    </label>
+                    <select
+                      name="iconName"
+                      defaultValue={editingApp?.iconName || "GraduationCap"}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs"
+                    >
+                      <option value="GraduationCap">Topi Wisuda (LMS)</option>
+                      <option value="Video">Kamera Video (Teams/Zoom)</option>
+                      <option value="FileSpreadsheet">Lembar Ujian (Assessment)</option>
+                      <option value="Award">Piala / Medali (Sertifikat)</option>
+                      <option value="BookOpen">Buku Terbuka (Library)</option>
+                      <option value="Target">Target Panah (Skill Matrix)</option>
+                      <option value="FolderGit2">Folder Dokumen (SOP)</option>
+                      <option value="Cpu">Chip / Simulasi (VR Lab)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2">

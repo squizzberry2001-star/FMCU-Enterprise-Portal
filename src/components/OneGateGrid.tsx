@@ -109,8 +109,16 @@ export const OneGateGrid: React.FC<OneGateGridProps> = ({ apps, searchQuery = ""
             className="group bg-white border border-slate-200/80 hover:border-blue-500/40 hover:shadow-sm rounded-xl p-4 transition-all duration-150 flex items-start justify-between gap-3"
           >
             <div className="flex items-start gap-3 min-w-0">
-              <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${getIconBg(app.iconName)} group-hover:scale-105 transition-transform`}>
-                {getIcon(app.iconName)}
+              <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${app.customIconUrl ? "bg-white border-slate-200/80 p-1.5" : getIconBg(app.iconName)} group-hover:scale-105 transition-transform`}>
+                {app.customIconUrl ? (
+                  <img
+                    src={app.customIconUrl}
+                    alt={app.name}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  getIcon(app.iconName)
+                )}
               </div>
               
               <div className="min-w-0">

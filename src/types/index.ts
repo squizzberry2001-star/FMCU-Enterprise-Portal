@@ -15,6 +15,7 @@ export interface OneGateApp {
   categoryLabel: string;
   url: string;
   iconName: string;
+  customIconUrl?: string;
   badge?: string;
   ssoSupported: boolean;
   isFavorite?: boolean;

@@ -190,8 +190,12 @@ export const OneGateHub: React.FC<OneGateHubProps> = ({ apps: initialApps, searc
               <div>
                 {/* Card Top: Icon & Badges */}
                 <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-50/80 border border-blue-100 flex items-center justify-center group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
-                    {renderAppIcon(app.iconName)}
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center group-hover:scale-105 transition-all shadow-sm ${app.customIconUrl ? "bg-white border border-slate-200 p-2" : "bg-blue-50/80 border border-blue-100 group-hover:bg-blue-600 group-hover:text-white"}`}>
+                    {app.customIconUrl ? (
+                      <img src={app.customIconUrl} alt={app.name} className="w-full h-full object-contain" />
+                    ) : (
+                      renderAppIcon(app.iconName)
+                    )}
                   </div>
                   
                   <div className="flex items-center gap-1.5">
