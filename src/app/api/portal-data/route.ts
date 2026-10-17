@@ -55,7 +55,8 @@ export async function GET(request: NextRequest) {
   try {
     const cacheBuster = `_t=${Date.now()}`;
     const calendarId = searchParams.get("calendarId") || "";
-    const targetUrl = `${gasUrl}?action=${encodeURIComponent(action)}${calendarId ? `&calendarId=${encodeURIComponent(calendarId)}` : ""}&${cacheBuster}`;
+    const folderId = searchParams.get("folderId") || "";
+    const targetUrl = `${gasUrl}?action=${encodeURIComponent(action)}${calendarId ? `&calendarId=${encodeURIComponent(calendarId)}` : ""}${folderId ? `&folderId=${encodeURIComponent(folderId)}` : ""}&${cacheBuster}`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: {

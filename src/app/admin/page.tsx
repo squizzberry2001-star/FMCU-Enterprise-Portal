@@ -36,7 +36,8 @@ import {
   syncAllToCloud, 
   uploadFileToGoogleDrive,
   syncGoogleCalendarEvents,
-  fetchEventsFromIcalUrl
+  fetchEventsFromIcalUrl,
+  autoClassifyGoogleDrive
 } from "@/lib/cloudSync";
 import { 
   getGoogleCalendarId, 
@@ -99,7 +100,10 @@ import {
   Presentation,
   Maximize2,
   Minimize2,
-  X
+  X,
+  Zap,
+  FolderOpen,
+  FileSpreadsheet
 } from "lucide-react";
 import { parseGoogleSlideEmbedUrl, getGoogleSlideExternalUrl } from "@/lib/slideUtils";
 import { getEmbedPdfUrl } from "@/lib/pdfUtils";
@@ -195,6 +199,18 @@ export default function AdminPage() {
   const [gcalEmbedUrl, setGcalEmbedUrl] = useState<string>("");
   const [isSyncingGcal, setIsSyncingGcal] = useState(false);
   const [gcalSyncMessage, setGcalSyncMessage] = useState<string | null>(null);
+
+  // Google Drive Ingestion & Classification States
+  const [driveClassifyFolderId, setDriveClassifyFolderId] = useState<string>("1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx");
+  const [isAutoClassifying, setIsAutoClassifying] = useState<boolean>(false);
+  const [classifyResult, setClassifyResult] = useState<{
+    scannedCoursesCount?: number;
+    scannedDocsCount?: number;
+    totalCoursesCount?: number;
+    totalDocsCount?: number;
+    folderName?: string;
+    timestamp?: string;
+  } | null>(null);
 
   // Load Data on Mount
   useEffect(() => {
@@ -657,6 +673,60 @@ export default function AdminPage() {
     showToast("PIN Admin baru berhasil disimpan!");
   };
 
+  // ==================== GOOGLE DRIVE AUTO-CLASSIFICATION ====================
+  const handleRunDriveAutoClassification = async (customFolderId?: string) => {
+    const targetId = (customFolderId && customFolderId.trim()) || driveClassifyFolderId.trim() || "1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx";
+    if (!targetId) {
+      alert("Masukkan ID Folder Google Drive terlebih dahulu!");
+      return;
+    }
+    setIsAutoClassifying(true);
+    showToast("Memindai dan mengklasifikasikan berkas Google Drive...");
+    try {
+      const res = await autoClassifyGoogleDrive(targetId);
+      if (res.success) {
+        setClassifyResult({
+          scannedCoursesCount: res.scannedCoursesCount,
+          scannedDocsCount: res.scannedDocsCount,
+          totalCoursesCount: res.totalCoursesCount,
+          totalDocsCount: res.totalDocsCount,
+          folderName: res.folderName,
+          timestamp: new Date().toLocaleTimeString("id-ID")
+        });
+
+        const updatedCourses = res.allCourses && res.allCourses.length > 0
+          ? res.allCourses
+          : res.courses && res.courses.length > 0
+          ? [...courses.filter(c => !res.courses!.some(rc => rc.id === c.id)), ...res.courses]
+          : courses;
+
+        const updatedDocs = res.allDocs && res.allDocs.length > 0
+          ? res.allDocs
+          : res.docs && res.docs.length > 0
+          ? [...docs.filter(d => !res.docs!.some(rd => rd.id === d.id)), ...res.docs]
+          : docs;
+
+        setCourses(updatedCourses);
+        saveStoredCourses(updatedCourses);
+
+        setDocs(updatedDocs);
+        saveStoredDocuments(updatedDocs);
+
+        if (isFirebaseConfigured()) {
+          triggerBackgroundCloudSync(apps, updatedCourses, events, updatedDocs, bannerAlert);
+        }
+
+        showToast(`Otomasi Selesai! ${res.scannedCoursesCount ?? 0} Modul Pelatihan & ${res.scannedDocsCount ?? 0} SOP/Dokumen berhasil diklasifikasikan.`);
+      } else {
+        alert("Gagal klasifikasi Google Drive: " + (res.error || "Pastikan script telah di-deploy dan hak akses Drive diizinkan"));
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setIsAutoClassifying(false);
+    }
+  };
+
   const handleResetData = () => {
     if (confirm("PERINGATAN: Semua perubahan data akan dikembalikan ke data awal default pabrik. Lanjutkan?")) {
       resetAllToDefaults();
@@ -946,16 +1016,28 @@ export default function AdminPage() {
                 <h2 className="text-base font-bold text-white">Kelola Modul Pelatihan & Compliance</h2>
                 <p className="text-xs text-slate-400">Atur kursus aktif, modul kepatuhan wajib, batas waktu, dan perkiraan jam belajar.</p>
               </div>
-              <button
-                onClick={() => {
-                  setEditingCourse(null);
-                  setCourseModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all self-start sm:self-auto"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Tambah Modul Pelatihan</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => handleRunDriveAutoClassification()}
+                  disabled={isAutoClassifying}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
+                  title="Pindai PPTX / Slide otomatis dari Google Drive"
+                >
+                  <Zap className={`w-3.5 h-3.5 ${isAutoClassifying ? "animate-spin text-amber-400" : "text-amber-400 fill-amber-400"}`} />
+                  <span>{isAutoClassifying ? "Memindai Drive..." : "Pindai dari Google Drive"}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingCourse(null);
+                    setCourseModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tambah Modul Pelatihan</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -1278,17 +1360,29 @@ export default function AdminPage() {
                 <h2 className="text-base font-bold text-white">Upload & Kelola Arsip SOP / Dokumen</h2>
                 <p className="text-xs text-slate-400">Tambahkan file PDF SOP kerja, pedoman kepatuhan, slide pelatihan, atau handbook.</p>
               </div>
-              <button
-                onClick={() => {
-                  setEditingDoc(null);
-                  setSelectedDocFile(null);
-                  setDocModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all self-start sm:self-auto"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Upload Dokumen Baru</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => handleRunDriveAutoClassification()}
+                  disabled={isAutoClassifying}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
+                  title="Pindai PDF / Excel otomatis dari Google Drive"
+                >
+                  <Zap className={`w-3.5 h-3.5 ${isAutoClassifying ? "animate-spin text-amber-400" : "text-amber-400 fill-amber-400"}`} />
+                  <span>{isAutoClassifying ? "Memindai Drive..." : "Pindai dari Google Drive"}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingDoc(null);
+                    setSelectedDocFile(null);
+                    setDocModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Upload Dokumen Baru</span>
+                </button>
+              </div>
             </div>
 
             <div className="bg-slate-800/50 border border-slate-800 rounded-xl divide-y divide-slate-800">
@@ -1984,6 +2078,144 @@ const firebaseConfig = {
               </div>
             </div>
             
+            {/* 3. OTOMASI KLASIFIKASI GOOGLE DRIVE */}
+            <div className="md:col-span-2 bg-gradient-to-br from-slate-800/90 via-slate-800/80 to-blue-950/30 border border-blue-900/40 rounded-xl p-5 space-y-4 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                    <Zap className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>3. Otomasi Klasifikasi Folder Google Drive (Auto-Ingestion)</span>
+                      <span className="text-[10px] font-semibold bg-blue-950 text-blue-400 border border-blue-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <FolderOpen className="w-3 h-3" /> Auto-Categorized
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Pindai folder Google Drive beserta subfoldernya secara otomatis. Sistem mengklasifikasikan berkas sesuai nama folder dan formatnya secara instan.
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href={`https://drive.google.com/drive/u/3/folders/${driveClassifyFolderId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/80 hover:bg-slate-900 border border-slate-700 rounded-lg text-slate-300 hover:text-white text-xs font-medium self-start sm:self-auto transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Buka Folder di Drive</span>
+                </a>
+              </div>
+
+              {/* Aturan Klasifikasi Badge */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-amber-950/20 border border-amber-800/40 rounded-xl flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                    <Presentation className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <span>PPTX &amp; Google Slides</span>
+                      <span className="text-[10px] bg-amber-500/10 text-amber-300 px-1.5 py-0.2 rounded border border-amber-500/30">Auto</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Dimasukkan ke Section <strong>Modul Pelatihan</strong> (<code>tb_courses</code>). Kategori diambil dari nama folder/subfolder. Disertai embed player slide show langsung.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-xl flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                    <FileSpreadsheet className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                      <span>PDF &amp; EXCEL (XLSX, XLS, CSV)</span>
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-300 px-1.5 py-0.2 rounded border border-emerald-500/30">Auto</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Dimasukkan ke Section <strong>SOP &amp; Dokumen</strong> (<code>tb_documents</code>). Kategori diambil dari nama folder/subfolder. Dilengkapi modal pratinjau PDF &amp; tombol unduh.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Input Target Folder ID & Scan Button */}
+              <div className="p-3.5 bg-slate-900/80 border border-slate-700/80 rounded-xl space-y-3">
+                <div>
+                  <label className="block text-slate-300 text-xs font-semibold mb-1">
+                    ID Folder Google Drive Sumber Berkas
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <input
+                      type="text"
+                      value={driveClassifyFolderId}
+                      onChange={(e) => setDriveClassifyFolderId(e.target.value)}
+                      placeholder="Contoh: 1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx"
+                      className="flex-1 px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-xs focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRunDriveAutoClassification()}
+                      disabled={isAutoClassifying}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md shrink-0 disabled:opacity-50"
+                    >
+                      <Zap className={`w-4 h-4 ${isAutoClassifying ? "animate-spin text-amber-300" : "text-amber-300 fill-amber-300"}`} />
+                      <span>{isAutoClassifying ? "Memindai Folder Drive..." : "Pindai & Klasifikasikan Otomatis"}</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Folder saat ini: <code className="text-blue-300 font-mono">1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx</code> (dapat diganti jika ingin memindai folder lain).
+                  </p>
+                </div>
+
+                {/* Status / Results Box */}
+                {classifyResult && (
+                  <div className="p-3 bg-slate-950/90 border border-emerald-800/60 rounded-lg text-xs space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between text-emerald-400 font-semibold border-b border-slate-800 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Check className="w-4 h-4" />
+                        <span>Klasifikasi Berhasil Disinkronkan ke Sheets &amp; Portal!</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-normal">Pukul: {classifyResult.timestamp}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center pt-1">
+                      <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Modul Ditemukan</div>
+                        <div className="text-base font-bold text-amber-400">+{classifyResult.scannedCoursesCount ?? 0} PPTX</div>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">SOP Ditemukan</div>
+                        <div className="text-base font-bold text-emerald-400">+{classifyResult.scannedDocsCount ?? 0} PDF/XLS</div>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Total Modul Aktif</div>
+                        <div className="text-base font-bold text-white">{courses.length}</div>
+                      </div>
+                      <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Total SOP Aktif</div>
+                        <div className="text-base font-bold text-white">{docs.length}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Petunjuk Otomasi Periodik Trigger */}
+                <div className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-lg text-[11px] text-slate-400 space-y-1">
+                  <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Mau berjalan otomatis setiap 1 jam tanpa perlu klik tombol?</span>
+                  </div>
+                  <p>
+                    Buka Google Apps Script editor Anda, pilih fungsi <code className="text-blue-300">installAutoClassifyTrigger</code> pada dropdown atas, lalu klik <strong>Run</strong> (Jalankan) 1 kali. Google Script akan otomatis memindai folder Drive ini setiap jam!
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Banner Reminder Settings */}
             <div className="bg-slate-800/50 border border-slate-800 rounded-xl p-5 space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">

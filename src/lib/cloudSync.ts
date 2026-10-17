@@ -344,3 +344,49 @@ export async function fetchEventsFromIcalUrl(icalUrl: string): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+/**
+ * Auto-classify files from Google Drive:
+ * - PPTX / Google Slides -> Section Modul Pelatihan (tb_courses), Kategori = Nama Folder
+ * - PDF dan EXCEL        -> Section SOP & Dokumen (tb_documents), Kategori = Nama Folder
+ */
+export async function autoClassifyGoogleDrive(targetFolderId?: string): Promise<{
+  success: boolean;
+  folderId?: string;
+  folderName?: string;
+  scannedCoursesCount?: number;
+  scannedDocsCount?: number;
+  totalCoursesCount?: number;
+  totalDocsCount?: number;
+  courses?: TrainingCourse[];
+  docs?: DocumentItem[];
+  allCourses?: TrainingCourse[];
+  allDocs?: DocumentItem[];
+  error?: string;
+}> {
+  const url = getGasApiUrl();
+  if (!url) {
+    return { success: false, error: "URL Google Apps Script belum dikonfigurasi." };
+  }
+
+  const folderId = (targetFolderId && targetFolderId.trim()) || getGdriveFolderId() || "1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx";
+
+  try {
+    const res = await fetch(`/api/portal-data?action=autoClassifyGdrive&folderId=${encodeURIComponent(folderId)}&gasUrl=${encodeURIComponent(url)}`, {
+      cache: "no-store",
+      headers: {
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache"
+      }
+    });
+    const result = await res.json();
+    if (result.success) {
+      setLastSyncTime(new Date().toLocaleTimeString("id-ID"));
+      broadcastPortalUpdate();
+    }
+    return result;
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+

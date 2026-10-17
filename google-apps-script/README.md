@@ -81,3 +81,26 @@ Skrip `Code.gs` telah dilengkapi fitur penyimpanan file universal:
 - **Link CDN Gambar Langsung (`directImageUrl`)**: Format `https://lh3.googleusercontent.com/d/{fileId}` yang memungkinkan foto logo aplikasi atau dokumentasi langsung tampil di elemen `<img>` tanpa terhambat CORS atau redirect Google Drive.
 - **Link Unduhan Otomatis (`downloadUrl`)**: Format `https://drive.google.com/uc?export=download&id={fileId}` untuk pengunduhan instan dokumen SOP oleh karyawan.
 - **Akses Publik Otomatis**: File otomatis diset dengan izin `ANYONE_WITH_LINK: VIEW` sehingga seluruh perangkat staf dapat melihat atau mengunduh file tanpa perlu meminta izin akses manual.
+
+---
+
+## ⚡ Langkah 5: Otomasi Klasifikasi Folder Google Drive (Folder Ingestion)
+
+Sistem FMCU dilengkapi fitur cerdas untuk memindai folder Google Drive (termasuk seluruh subfoldernya) dan secara otomatis mengelompokkannya:
+
+- **Aturan Klasifikasi Otomatis**:
+  - 🎞️ **PPTX atau Google Slides** ➔ Masuk ke **Section Modul Pelatihan** (`tb_courses`), Kategori = Nama Folder/Subfolder.
+  - 📄 **PDF dan EXCEL (XLSX, XLS, CSV, Sheets)** ➔ Masuk ke **Section SOP & Dokumen** (`tb_documents`), Kategori = Nama Folder/Subfolder.
+
+### Cara Menjalankan Manual dari Admin Portal:
+1. Masuk ke halaman **Admin** (`/admin`) -> Tab **Pengaturan & Backup** -> Bagian **3. Otomasi Klasifikasi Folder Google Drive**.
+2. Masukkan ID folder (Default sudah terisi: `1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx`).
+3. Klik tombol **"Pindai & Klasifikasikan Otomatis"**.
+4. Semua berkas akan otomatis terbaca, dimasukkan ke tabel Sheets, dan tampil di portal!
+
+### Cara Mengaktifkan Otomasi Periodik Tiap 1 Jam (Background Trigger):
+1. Buka editor Google Apps Script Anda.
+2. Di dropdown fungsi bagian atas, pilih fungsi **`installAutoClassifyTrigger`**.
+3. Klik tombol **Run** (Jalankan) 1 kali.
+4. Google Script akan otomatis menjadwalkan trigger `everyHours(1)` untuk memindai folder Google Drive tanpa perlu membuka web portal!
+

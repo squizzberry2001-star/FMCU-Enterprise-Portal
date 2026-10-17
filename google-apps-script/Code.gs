@@ -108,6 +108,12 @@ function doGet(e) {
       return responseJSON(result);
     }
 
+    if (action === "autoClassifyGdrive" || action === "scanDriveFolder") {
+      const folderId = (e && e.parameter && e.parameter.folderId) || "1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx";
+      const result = autoClassifyDriveFolder(folderId);
+      return responseJSON(result);
+    }
+
     return responseJSON({ success: false, message: "Action tidak dikenal: " + action });
   } catch (err) {
     return responseJSON({ success: false, error: err.toString() });
@@ -262,6 +268,11 @@ function doPost(e) {
         saveTableData(SHEET_NAMES.EVENTS, calRes.events);
       }
       return responseJSON(calRes);
+    }
+    if (action === "autoClassifyGdrive" || action === "scanDriveFolder") {
+      const folderId = payload.folderId || "1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx";
+      const classifyRes = autoClassifyDriveFolder(folderId);
+      return responseJSON(classifyRes);
     }
 
     return responseJSON({ success: false, message: "Action tidak dikenal: " + action });
@@ -522,4 +533,203 @@ function fetchGoogleCalendarEvents(calendarId) {
   } catch (err) {
     return { success: false, error: err.toString() };
   }
+}
+
+/**
+ * ==========================================================================
+ * OTOMASI KLASIFIKASI GOOGLE DRIVE KE PORTAL FMCU
+ * - PPTX / Google Slides  -> Section Modul Pelatihan (tb_courses), Kategori = Nama Folder
+ * - PDF dan EXCEL         -> Section SOP & Dokumen (tb_documents), Kategori = Nama Folder
+ * ==========================================================================
+ */
+function autoClassifyDriveFolder(targetFolderId) {
+  const folderId = (targetFolderId && targetFolderId.trim()) || "1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx";
+  
+  try {
+    const rootFolder = DriveApp.getFolderById(folderId);
+    if (!rootFolder) {
+      return { success: false, error: "Folder Google Drive tidak ditemukan dengan ID: " + folderId };
+    }
+
+    const courses = [];
+    const docs = [];
+
+    // Helper rekursif untuk memindai berkas dalam folder dan subfoldernya
+    function processFolder(folder, currentCategory) {
+      const folderName = folder.getName();
+      // Gunakan nama subfolder sebagai kategori, jika root folder gunakan "Umum"
+      const categoryName = currentCategory || folderName;
+
+      // 1. Proses semua berkas di dalam folder ini
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const file = files.next();
+        const fileName = file.getName();
+        const mimeType = file.getMimeType();
+        const fileId = file.getId();
+        const sizeBytes = file.getSize();
+        const updatedAt = Utilities.formatDate(file.getLastUpdated(), "Asia/Jakarta", "dd MMM yyyy");
+
+        // Format ukuran file (KB / MB)
+        let sizeStr = "1.0 MB";
+        if (sizeBytes > 1024 * 1024) {
+          sizeStr = (sizeBytes / (1024 * 1024)).toFixed(1) + " MB";
+        } else if (sizeBytes > 1024) {
+          sizeStr = Math.round(sizeBytes / 1024) + " KB";
+        }
+
+        // ==========================================
+        // ATURAN 1: PPTX atau Google Slides
+        // -> Masuk ke Section Modul Pelatihan
+        // ==========================================
+        const isSlide = (
+          mimeType === MimeType.GOOGLE_SLIDES ||
+          mimeType === "application/vnd.google-apps.presentation" ||
+          mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+          mimeType === "application/vnd.ms-powerpoint" ||
+          /\.(pptx|ppt)$/i.test(fileName)
+        );
+
+        if (isSlide) {
+          const cleanTitle = fileName.replace(/\.(pptx|ppt)$/i, "");
+          let slideUrl = "";
+          if (mimeType === MimeType.GOOGLE_SLIDES || mimeType === "application/vnd.google-apps.presentation") {
+            slideUrl = "https://docs.google.com/presentation/d/" + fileId + "/preview";
+          } else {
+            slideUrl = "https://drive.google.com/file/d/" + fileId + "/preview";
+          }
+
+          courses.push({
+            id: "gdrive-crs-" + fileId,
+            title: cleanTitle,
+            category: categoryName,
+            slideUrl: slideUrl,
+            description: "Modul presentasi materi dari Google Drive folder " + categoryName + ".",
+            estimatedHours: "45 Menit",
+            status: "in-progress",
+            updatedAt: updatedAt
+          });
+          continue;
+        }
+
+        // ==========================================
+        // ATURAN 2: PDF dan EXCEL
+        // -> Masuk ke Section SOP & Dokumen
+        // ==========================================
+        const isPdf = (
+          mimeType === MimeType.PDF ||
+          mimeType === "application/pdf" ||
+          /\.pdf$/i.test(fileName)
+        );
+
+        const isExcel = (
+          mimeType === MimeType.GOOGLE_SHEETS ||
+          mimeType === "application/vnd.google-apps.spreadsheet" ||
+          mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+          mimeType === "application/vnd.ms-excel" ||
+          /\.(xlsx|xls|csv)$/i.test(fileName)
+        );
+
+        if (isPdf || isExcel) {
+          const cleanTitle = fileName.replace(/\.(pdf|xlsx|xls|csv)$/i, "");
+          const format = isPdf ? "PDF" : (/\.csv$/i.test(fileName) ? "CSV" : "XLSX");
+
+          let downloadUrl = "";
+          let viewUrl = "https://drive.google.com/file/d/" + fileId + "/preview";
+
+          if (mimeType === MimeType.GOOGLE_SHEETS || mimeType === "application/vnd.google-apps.spreadsheet") {
+            downloadUrl = "https://docs.google.com/spreadsheets/d/" + fileId + "/export?format=xlsx";
+            viewUrl = "https://docs.google.com/spreadsheets/d/" + fileId + "/preview";
+          } else {
+            downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+          }
+
+          docs.push({
+            id: "gdrive-doc-" + fileId,
+            title: cleanTitle,
+            category: categoryName,
+            format: format,
+            size: sizeStr,
+            updatedAt: updatedAt,
+            downloadUrl: downloadUrl,
+            viewUrl: viewUrl,
+            gdriveFileId: fileId
+          });
+        }
+      }
+
+      // 2. Rekursif ke seluruh subfolder di dalam folder ini
+      const subfolders = folder.getFolders();
+      while (subfolders.hasNext()) {
+        const sub = subfolders.next();
+        processFolder(sub, sub.getName());
+      }
+    }
+
+    // Mulai proses dari root folder
+    processFolder(rootFolder, null);
+
+    // Ambil data yang sudah ada di tabel Sheets
+    const existingCourses = getTableData(SHEET_NAMES.COURSES) || [];
+    const existingDocs = getTableData(SHEET_NAMES.DOCS) || [];
+
+    // Gabungkan (Merge): update jika ada ID yang sama, atau tambahkan jika baru
+    const courseMap = {};
+    existingCourses.forEach(function(c) { if (c.id) courseMap[c.id] = c; });
+    courses.forEach(function(c) { if (c.id) courseMap[c.id] = c; });
+    const mergedCourses = Object.keys(courseMap).map(function(k) { return courseMap[k]; });
+
+    const docMap = {};
+    existingDocs.forEach(function(d) { if (d.id) docMap[d.id] = d; });
+    docs.forEach(function(d) { if (d.id) docMap[d.id] = d; });
+    const mergedDocs = Object.keys(docMap).map(function(k) { return docMap[k]; });
+
+    // Simpan otomatis ke Google Sheets
+    saveTableData(SHEET_NAMES.COURSES, mergedCourses);
+    saveTableData(SHEET_NAMES.DOCS, mergedDocs);
+
+    return {
+      success: true,
+      folderId: folderId,
+      folderName: rootFolder.getName(),
+      scannedCoursesCount: courses.length,
+      scannedDocsCount: docs.length,
+      totalCoursesCount: mergedCourses.length,
+      totalDocsCount: mergedDocs.length,
+      courses: courses,
+      docs: docs,
+      allCourses: mergedCourses,
+      allDocs: mergedDocs,
+      timestamp: new Date().toISOString()
+    };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * Trigger otomatis periodik (misal jalan setiap 1 jam)
+ */
+function runAutoClassifyTrigger() {
+  const result = autoClassifyDriveFolder("1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx");
+  Logger.log("Hasil Auto-Classify: " + JSON.stringify(result));
+}
+
+/**
+ * Jalankan fungsi ini 1x di editor Google Apps Script untuk menjadwalkan otomasi tiap 1 jam
+ */
+function installAutoClassifyTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "runAutoClassifyTrigger") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  ScriptApp.newTrigger("runAutoClassifyTrigger")
+    .timeBased()
+    .everyHours(1)
+    .create();
+
+  Logger.log("✓ Trigger otomatis Google Drive FMCU setiap 1 jam berhasil diaktifkan!");
 }
