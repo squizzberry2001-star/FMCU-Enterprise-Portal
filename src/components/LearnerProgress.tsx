@@ -1,17 +1,18 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { TrainingCourse } from "@/types";
 import { 
-  ArrowRight, 
-  CheckCircle2, 
   Presentation, 
   Maximize2, 
   Minimize2, 
   ExternalLink, 
   X, 
   Play,
-  Tv,
+  BookOpen,
+  Clock,
+  Search,
+  Sparkles,
   Layers
 } from "lucide-react";
 import { parseGoogleSlideEmbedUrl, getGoogleSlideExternalUrl } from "@/lib/slideUtils";
@@ -23,6 +24,8 @@ interface LearnerProgressProps {
 export const LearnerProgress: React.FC<LearnerProgressProps> = ({ courses }) => {
   const [selectedCourseForSlide, setSelectedCourseForSlide] = useState<TrainingCourse | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState<string>("");
   const presentationContainerRef = useRef<HTMLDivElement>(null);
 
   // Keyboard shortcut: Escape to close or exit fullscreen
@@ -63,91 +66,156 @@ export const LearnerProgress: React.FC<LearnerProgressProps> = ({ courses }) => 
     }
   };
 
+  // Extract unique categories
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(courses.map((c) => c.category).filter(Boolean)));
+    return ["all", ...cats];
+  }, [courses]);
+
+  // Filtered courses
+  const filteredCourses = useMemo(() => {
+    return courses.filter((course) => {
+      const matchCategory = selectedCategory === "all" || course.category === selectedCategory;
+      const matchSearch = 
+        !searchFilter.trim() || 
+        course.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        (course.description && course.description.toLowerCase().includes(searchFilter.toLowerCase())) ||
+        course.category.toLowerCase().includes(searchFilter.toLowerCase());
+      return matchCategory && matchSearch;
+    });
+  }, [courses, selectedCategory, searchFilter]);
+
   return (
-    <div className="space-y-3">
-      {courses.map((course) => {
-        const hasSlide = Boolean(course.slideUrl && course.slideUrl.trim().length > 0);
+    <div className="space-y-4">
+      {/* Category Pills & Quick Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/80 p-3 sm:p-4 rounded-xl shadow-2xs">
+        {/* Category Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                selectedCategory === cat
+                  ? "bg-slate-900 text-white font-semibold shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+              }`}
+            >
+              {cat === "all" ? "Semua Modul" : cat}
+            </button>
+          ))}
+        </div>
 
-        return (
-          <div
-            key={course.id}
-            className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 hover:border-slate-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm hover:shadow"
+        {/* Search input */}
+        <div className="relative w-full sm:w-64 shrink-0">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="Cari modul materi..."
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder:text-slate-400 transition-all"
+          />
+        </div>
+      </div>
+
+      {/* Grid of Modules */}
+      {filteredCourses.length === 0 ? (
+        <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center space-y-2">
+          <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+          <p className="text-sm font-medium text-slate-600">Tidak ada modul yang cocok dengan pencarian.</p>
+          <button
+            onClick={() => { setSelectedCategory("all"); setSearchFilter(""); }}
+            className="text-xs text-blue-600 hover:underline font-semibold"
           >
-            <div className="space-y-1.5 flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                {course.isMandatory && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-600 border border-red-100">
-                    Wajib
-                  </span>
-                )}
-                <span className="text-xs text-slate-400">
-                  Tenggat: <strong className="text-slate-600 font-medium">{course.dueDate}</strong>
-                </span>
+            Reset filter
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredCourses.map((course) => {
+            const hasSlide = Boolean(course.slideUrl && course.slideUrl.trim().length > 0);
 
+            return (
+              <div
+                key={course.id}
+                className="bg-white border border-slate-200/80 rounded-2xl p-5 hover:border-blue-400 hover:shadow-md transition-all flex flex-col justify-between gap-4 group relative overflow-hidden"
+              >
+                {/* Decorative Subtle Background Accent for Slides */}
                 {hasSlide && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                    <Presentation className="w-3 h-3 text-amber-600" />
-                    Google Slides Ready
-                  </span>
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-500/10 via-transparent to-transparent pointer-events-none rounded-tr-2xl" />
                 )}
-              </div>
 
-              <h3 className="font-semibold text-slate-900 text-sm sm:text-base truncate">
-                {course.title}
-              </h3>
+                <div className="space-y-2.5">
+                  {/* Category & Duration Row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200/60">
+                      {course.category}
+                    </span>
 
-              {/* Progress Bar & Module counter */}
-              <div className="flex items-center gap-3 pt-1 max-w-md">
-                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      course.progress === 100 ? "bg-emerald-500" : "bg-blue-600"
-                    }`}
-                    style={{ width: `${course.progress}%` }}
-                  />
+                    <div className="flex items-center gap-1.5">
+                      {course.estimatedHours && (
+                        <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          {course.estimatedHours}
+                        </span>
+                      )}
+                      {hasSlide && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/70">
+                          <Presentation className="w-3 h-3 text-amber-600" />
+                          Slide Show PPT
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <h3 className="font-bold text-slate-900 text-base group-hover:text-blue-600 transition-colors line-clamp-2">
+                    {course.title}
+                  </h3>
+
+                  {/* Description (if provided) */}
+                  {course.description && (
+                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                      {course.description}
+                    </p>
+                  )}
                 </div>
-                <span className="text-xs font-semibold text-slate-700 shrink-0">
-                  {course.progress}%
-                </span>
-                <span className="text-[11px] text-slate-400 hidden sm:inline">
-                  ({course.completedModules}/{course.totalModules} modul)
-                </span>
+
+                {/* Direct Action Button */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-400">
+                    {hasSlide ? "Siap dipresentasikan" : "Materi dokumen"}
+                  </span>
+
+                  {hasSlide ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCourseForSlide(course)}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-blue-600 text-white rounded-xl text-xs font-semibold shadow-sm hover:shadow transition-all group/btn"
+                      title="Buka dan presentasikan modul slide ini"
+                    >
+                      <Play className="w-3.5 h-3.5 text-amber-400 fill-amber-400 transition-transform group-hover/btn:scale-110" />
+                      <span>Buka Modul</span>
+                    </button>
+                  ) : (
+                    <a
+                      href="https://lms.fmcu-portal.internal"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      <span>Buka LMS</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
               </div>
-            </div>
-
-            {/* Actions: Presentation Mode + LMS Button */}
-            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-              {hasSlide && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedCourseForSlide(course)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm hover:shadow transition-all group"
-                  title="Presentasikan modul ini seperti Slide Show PowerPoint"
-                >
-                  <Presentation className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
-                  <span>Presentasi Slide</span>
-                </button>
-              )}
-
-              {course.status === "completed" ? (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Lulus
-                </span>
-              ) : (
-                <a
-                  href="https://lms.fmcu-portal.internal"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-blue-600 text-white rounded-lg text-xs font-medium transition-colors"
-                >
-                  <span>{course.progress > 0 ? "Lanjutkan LMS" : "Mulai LMS"}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </a>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
 
       {/* ==================== INTERACTIVE SLIDESHOW PRESENTATION MODAL ==================== */}
       {selectedCourseForSlide && (
@@ -169,7 +237,7 @@ export const LearnerProgress: React.FC<LearnerProgressProps> = ({ courses }) => 
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      Slide Show Modul
+                      Modul Pelatihan
                     </span>
                     <span className="text-xs text-slate-400 truncate hidden sm:inline">
                       {selectedCourseForSlide.category}
@@ -242,11 +310,15 @@ export const LearnerProgress: React.FC<LearnerProgressProps> = ({ courses }) => 
             <div className="bg-slate-950/95 border-t border-slate-800 px-4 py-2 text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Navigasi: Gunakan tombol panah ⬅️ ➡️ keyboard atau klik slide untuk maju/mundur.</span>
+                <span>Navigasi: Gunakan tombol panah ⬅️ ➡️ pada keyboard atau klik slide untuk maju/mundur.</span>
               </div>
               <div className="flex items-center gap-3 text-slate-500 text-[10px]">
-                <span>Durasi: {selectedCourseForSlide.estimatedHours}</span>
-                <span>•</span>
+                {selectedCourseForSlide.estimatedHours && (
+                  <>
+                    <span>Durasi: {selectedCourseForSlide.estimatedHours}</span>
+                    <span>•</span>
+                  </>
+                )}
                 <span>Tekan <kbd className="px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700">ESC</kbd> untuk menutup</span>
               </div>
             </div>

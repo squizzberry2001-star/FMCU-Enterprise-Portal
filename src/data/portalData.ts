@@ -129,52 +129,38 @@ export const trainingCoursesData: TrainingCourse[] = [
   {
     id: "crs-101",
     title: "Health, Safety & Environment (HSE) Compliance 2026",
-    category: "Mandatory Compliance",
-    progress: 75,
-    dueDate: "28 Okt 2026",
-    isMandatory: true,
-    totalModules: 8,
-    completedModules: 6,
+    category: "Keselamatan Kerja",
     estimatedHours: "4 Jam",
+    description: "Pedoman standar keselamatan kerja, penanganan insiden darurat, dan kepatuhan lingkungan FMCU.",
     status: "in-progress",
     slideUrl: "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
   },
   {
     id: "crs-102",
-    title: "Enterprise Data Security & Anti-Phishing Awareness",
-    category: "IT Security",
-    progress: 100,
-    dueDate: "15 Sep 2026",
-    isMandatory: true,
-    totalModules: 5,
-    completedModules: 5,
-    estimatedHours: "2.5 Jam",
-    status: "completed"
+    title: "Modul Cashier New Hire",
+    category: "Cashier",
+    estimatedHours: "4 Jam",
+    description: "Panduan onboarding lengkap prosedur kasir, opening & closing kas, penanganan transaksi POS, dan rekonsiliasi kas harian.",
+    status: "in-progress",
+    slideUrl: "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
   },
   {
     id: "crs-103",
     title: "Operational Excellence & Fleet Telematics Management",
-    category: "Technical Skill",
-    progress: 30,
-    dueDate: "10 Nov 2026",
-    isMandatory: false,
-    totalModules: 10,
-    completedModules: 3,
+    category: "Operasional",
     estimatedHours: "6 Jam",
+    description: "Standar baku monitoring telematika armada, efisiensi konsumsi bahan bakar, dan optimasi rute distribusi logistik.",
     status: "in-progress",
     slideUrl: "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
   },
   {
     id: "crs-104",
-    title: "Transformational Leadership & Team Coaching",
-    category: "Leadership",
-    progress: 0,
-    dueDate: "30 Nov 2026",
-    isMandatory: false,
-    totalModules: 6,
-    completedModules: 0,
-    estimatedHours: "5 Jam",
-    status: "not-started"
+    title: "Enterprise Data Security & Anti-Phishing Awareness",
+    category: "IT Security",
+    estimatedHours: "2.5 Jam",
+    description: "Kesadaran keamanan informasi, proteksi data internal, dan pencegahan serangan social engineering/phishing.",
+    status: "in-progress",
+    slideUrl: "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
   }
 ];
 

@@ -27,15 +27,17 @@ export interface TrainingCourse {
   id: string;
   title: string;
   category: string;
-  progress: number; // 0 - 100
-  dueDate: string;
-  isMandatory: boolean;
-  totalModules: number;
-  completedModules: number;
-  estimatedHours: string;
-  thumbnailUrl?: string;
-  status: "in-progress" | "not-started" | "completed";
   slideUrl?: string;
+  description?: string;
+  estimatedHours?: string;
+  thumbnailUrl?: string;
+  status?: "in-progress" | "not-started" | "completed";
+  // Optional backward compatibility
+  progress?: number;
+  dueDate?: string;
+  isMandatory?: boolean;
+  totalModules?: number;
+  completedModules?: number;
 }
 
 export interface CalendarEvent {

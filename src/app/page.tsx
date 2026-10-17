@@ -197,7 +197,7 @@ export default function Home() {
         <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto scrollbar-none">
           {[
             { id: "apps", label: "Gerbang Aplikasi", icon: LayoutGrid, count: apps.length },
-            { id: "courses", label: "Modul Saya", icon: BookOpen, count: courses.length },
+            { id: "courses", label: "Modul Pelatihan", icon: BookOpen, count: courses.length },
             { id: "calendar", label: "Jadwal & Kelas", icon: Calendar, count: events.length },
             { id: "docs", label: "SOP & Dokumen", icon: FileText, count: docs.length },
           ].map((tab) => {

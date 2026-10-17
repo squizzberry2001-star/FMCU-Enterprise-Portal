@@ -394,16 +394,12 @@ export default function AdminPage() {
     } else {
       const newCourse: TrainingCourse = {
         id: "crs-" + Date.now(),
-        title: courseData.title || "Judul Pelatihan Baru",
+        title: courseData.title || "Modul Pelatihan Baru",
         category: courseData.category || "General",
-        progress: Number(courseData.progress) || 0,
-        dueDate: courseData.dueDate || "30 Des 2026",
-        isMandatory: courseData.isMandatory ?? false,
-        totalModules: Number(courseData.totalModules) || 5,
-        completedModules: Number(courseData.completedModules) || 0,
-        estimatedHours: courseData.estimatedHours || "3 Jam",
-        status: courseData.progress === 100 ? "completed" : (courseData.progress || 0) > 0 ? "in-progress" : "not-started",
-        slideUrl: courseData.slideUrl || ""
+        slideUrl: courseData.slideUrl || "",
+        description: courseData.description || "",
+        estimatedHours: courseData.estimatedHours || "30 Menit",
+        status: "in-progress"
       };
       updated = [newCourse, ...courses];
       showToast("Modul pelatihan baru berhasil ditambahkan!");
@@ -867,10 +863,8 @@ export default function AdminPage() {
                     <div>
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                         <div className="flex items-center gap-1.5">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                            c.isMandatory ? "bg-red-950 text-red-300 border border-red-800" : "bg-slate-700 text-slate-300"
-                          }`}>
-                            {c.isMandatory ? "Wajib" : c.category}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-700 text-slate-300">
+                            {c.category}
                           </span>
                           {hasSlide ? (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800 flex items-center gap-1">
@@ -880,12 +874,16 @@ export default function AdminPage() {
                             <span className="text-[10px] text-slate-500 italic">Tanpa slide</span>
                           )}
                         </div>
-                        <span className="text-xs text-slate-400">Tenggat: {c.dueDate}</span>
+                        {c.estimatedHours && (
+                          <span className="text-xs text-slate-400">Durasi: {c.estimatedHours}</span>
+                        )}
                       </div>
                       <h3 className="font-semibold text-white text-sm">{c.title}</h3>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Progres: {c.completedModules}/{c.totalModules} modul ({c.progress}%) • {c.estimatedHours}
-                      </p>
+                      {c.description && (
+                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                          {c.description}
+                        </p>
+                      )}
                       {hasSlide && (
                         <div className="mt-2 text-[11px] font-mono text-slate-400 truncate bg-slate-900/60 px-2 py-1 rounded border border-slate-800 flex items-center gap-1.5">
                           <span className="text-amber-400 font-bold shrink-0">Slide:</span>
@@ -2025,25 +2023,22 @@ const firebaseConfig = {
                 const form = e.target as HTMLFormElement;
                 handleSaveCourse({
                   title: (form.elements.namedItem("title") as HTMLInputElement).value,
-                  category: (form.elements.namedItem("category") as HTMLInputElement).value,
-                  dueDate: (form.elements.namedItem("dueDate") as HTMLInputElement).value,
-                  progress: Number((form.elements.namedItem("progress") as HTMLInputElement).value),
-                  totalModules: Number((form.elements.namedItem("totalModules") as HTMLInputElement).value),
-                  completedModules: Number((form.elements.namedItem("completedModules") as HTMLInputElement).value),
-                  estimatedHours: (form.elements.namedItem("estimatedHours") as HTMLInputElement).value,
-                  isMandatory: (form.elements.namedItem("isMandatory") as HTMLInputElement).checked,
                   slideUrl: (form.elements.namedItem("slideUrl") as HTMLInputElement)?.value.trim() || "",
+                  category: (form.elements.namedItem("category") as HTMLInputElement).value,
+                  estimatedHours: (form.elements.namedItem("estimatedHours") as HTMLInputElement).value,
+                  description: (form.elements.namedItem("description") as HTMLTextAreaElement)?.value || "",
                 });
               }}
               className="space-y-3"
             >
               <div>
-                <label className="block text-slate-400 mb-1">Judul Pelatihan</label>
+                <label className="block text-slate-400 mb-1">Judul Modul Pelatihan</label>
                 <input
                   name="title"
                   defaultValue={editingCourse?.title || ""}
+                  placeholder="Contoh: Modul Cashier New Hire"
                   required
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-500"
                 />
               </div>
 
@@ -2058,7 +2053,7 @@ const firebaseConfig = {
                   name="slideUrl"
                   type="text"
                   defaultValue={editingCourse?.slideUrl || ""}
-                  placeholder="https://docs.google.com/presentation/d/.../edit"
+                  placeholder="https://docs.google.com/presentation/d/.../edit atau /pub"
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
@@ -2068,76 +2063,35 @@ const firebaseConfig = {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Kategori Pelatihan</label>
+                  <label className="block text-slate-400 mb-1">Kategori Modul</label>
                   <input
                     name="category"
-                    defaultValue={editingCourse?.category || "Compliance"}
+                    defaultValue={editingCourse?.category || "Cashier"}
+                    placeholder="Contoh: Cashier, Operasional"
                     required
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1">Batas Waktu (Due Date)</label>
+                  <label className="block text-slate-400 mb-1">Estimasi Durasi (Opsional)</label>
                   <input
-                    name="dueDate"
-                    defaultValue={editingCourse?.dueDate || "28 Okt 2026"}
-                    required
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1">Progres (%)</label>
-                  <input
-                    name="progress"
-                    type="number"
-                    min="0"
-                    max="100"
-                    defaultValue={editingCourse?.progress ?? 0}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1">Total Modul</label>
-                  <input
-                    name="totalModules"
-                    type="number"
-                    defaultValue={editingCourse?.totalModules || 8}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1">Modul Selesai</label>
-                  <input
-                    name="completedModules"
-                    type="number"
-                    defaultValue={editingCourse?.completedModules || 0}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                    name="estimatedHours"
+                    defaultValue={editingCourse?.estimatedHours || "30 Menit"}
+                    placeholder="Contoh: 30 Menit, 1 Jam"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder:text-slate-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Estimasi Durasi (contoh: 4 Jam)</label>
-                <input
-                  name="estimatedHours"
-                  defaultValue={editingCourse?.estimatedHours || "4 Jam"}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
+                <label className="block text-slate-400 mb-1">Deskripsi / Ringkasan Modul (Opsional)</label>
+                <textarea
+                  name="description"
+                  rows={2}
+                  defaultValue={editingCourse?.description || ""}
+                  placeholder="Ringkasan materi atau tujuan modul ini..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs placeholder:text-slate-500 resize-none"
                 />
-              </div>
-
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="isMandatory"
-                    defaultChecked={editingCourse?.isMandatory ?? true}
-                    className="rounded text-red-600 bg-slate-900 border-slate-700"
-                  />
-                  <span className="text-red-400 font-semibold">Tandai sebagai Pelatihan Wajib Kepatuhan (Mandatory HSE/HR)</span>
-                </label>
               </div>
 
               <div className="pt-4 flex items-center justify-end gap-2 border-t border-slate-700">
