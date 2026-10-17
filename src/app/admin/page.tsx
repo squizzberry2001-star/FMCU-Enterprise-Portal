@@ -82,8 +82,13 @@ import {
   Copy,
   ImageIcon,
   Download,
-  Flame
+  Flame,
+  Presentation,
+  Maximize2,
+  Minimize2,
+  X
 } from "lucide-react";
+import { parseGoogleSlideEmbedUrl, getGoogleSlideExternalUrl } from "@/lib/slideUtils";
 
 export default function AdminPage() {
   // Authentication State
@@ -111,6 +116,7 @@ export default function AdminPage() {
 
   const [courseModalOpen, setCourseModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<TrainingCourse | null>(null);
+  const [adminSlidePreviewCourse, setAdminSlidePreviewCourse] = useState<TrainingCourse | null>(null);
 
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
@@ -396,7 +402,8 @@ export default function AdminPage() {
         totalModules: Number(courseData.totalModules) || 5,
         completedModules: Number(courseData.completedModules) || 0,
         estimatedHours: courseData.estimatedHours || "3 Jam",
-        status: courseData.progress === 100 ? "completed" : (courseData.progress || 0) > 0 ? "in-progress" : "not-started"
+        status: courseData.progress === 100 ? "completed" : (courseData.progress || 0) > 0 ? "in-progress" : "not-started",
+        slideUrl: courseData.slideUrl || ""
       };
       updated = [newCourse, ...courses];
       showToast("Modul pelatihan baru berhasil ditambahkan!");
@@ -853,45 +860,73 @@ export default function AdminPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {courses.map((c) => (
-                <div key={c.id} className="bg-slate-800/50 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        c.isMandatory ? "bg-red-950 text-red-300 border border-red-800" : "bg-slate-700 text-slate-300"
-                      }`}>
-                        {c.isMandatory ? "Wajib" : c.category}
-                      </span>
-                      <span className="text-xs text-slate-400">Tenggat: {c.dueDate}</span>
+              {courses.map((c) => {
+                const hasSlide = Boolean(c.slideUrl && c.slideUrl.trim().length > 0);
+                return (
+                  <div key={c.id} className="bg-slate-800/50 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            c.isMandatory ? "bg-red-950 text-red-300 border border-red-800" : "bg-slate-700 text-slate-300"
+                          }`}>
+                            {c.isMandatory ? "Wajib" : c.category}
+                          </span>
+                          {hasSlide ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800 flex items-center gap-1">
+                              <Presentation className="w-3 h-3 text-amber-400" /> Slide Google
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 italic">Tanpa slide</span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-400">Tenggat: {c.dueDate}</span>
+                      </div>
+                      <h3 className="font-semibold text-white text-sm">{c.title}</h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Progres: {c.completedModules}/{c.totalModules} modul ({c.progress}%) • {c.estimatedHours}
+                      </p>
+                      {hasSlide && (
+                        <div className="mt-2 text-[11px] font-mono text-slate-400 truncate bg-slate-900/60 px-2 py-1 rounded border border-slate-800 flex items-center gap-1.5">
+                          <span className="text-amber-400 font-bold shrink-0">Slide:</span>
+                          <span className="truncate">{c.slideUrl}</span>
+                        </div>
+                      )}
                     </div>
-                    <h3 className="font-semibold text-white text-sm">{c.title}</h3>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Progres: {c.completedModules}/{c.totalModules} modul ({c.progress}%) • {c.estimatedHours}
-                    </p>
-                  </div>
 
-                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-500">ID: {c.id}</span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setEditingCourse(c);
-                          setCourseModalOpen(true);
-                        }}
-                        className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors flex items-center gap-1"
-                      >
-                        <Pencil className="w-3 h-3" /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCourse(c.id)}
-                        className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+                      <span className="text-[11px] text-slate-500">ID: {c.id}</span>
+                      <div className="flex items-center gap-1.5">
+                        {hasSlide && (
+                          <button
+                            type="button"
+                            onClick={() => setAdminSlidePreviewCourse(c)}
+                            className="px-2.5 py-1 text-xs bg-amber-600/80 hover:bg-amber-600 text-white rounded-lg transition-colors flex items-center gap-1 font-semibold"
+                            title="Tes presentasi slide show"
+                          >
+                            <Presentation className="w-3 h-3" /> Tes Slide
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setEditingCourse(c);
+                            setCourseModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCourse(c.id)}
+                          className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1997,6 +2032,7 @@ const firebaseConfig = {
                   completedModules: Number((form.elements.namedItem("completedModules") as HTMLInputElement).value),
                   estimatedHours: (form.elements.namedItem("estimatedHours") as HTMLInputElement).value,
                   isMandatory: (form.elements.namedItem("isMandatory") as HTMLInputElement).checked,
+                  slideUrl: (form.elements.namedItem("slideUrl") as HTMLInputElement)?.value.trim() || "",
                 });
               }}
               className="space-y-3"
@@ -2009,6 +2045,25 @@ const firebaseConfig = {
                   required
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400">Tautan Google Slide (Slideshow PPT)</label>
+                  <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                    <Presentation className="w-3 h-3" /> Link Edit / Present / Iframe Embed
+                  </span>
+                </div>
+                <input
+                  name="slideUrl"
+                  type="text"
+                  defaultValue={editingCourse?.slideUrl || ""}
+                  placeholder="https://docs.google.com/presentation/d/.../edit"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-500 focus:border-amber-500 focus:outline-none"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  💡 Modul ini akan dapat dipresentasikan langsung di portal seperti slide show PowerPoint interaktif.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2101,6 +2156,82 @@ const firebaseConfig = {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== ADMIN SLIDE SHOW PREVIEW MODAL ==================== */}
+      {adminSlidePreviewCourse && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl flex flex-col overflow-hidden shadow-2xl w-full max-w-5xl h-[88vh] max-h-[780px]">
+            {/* Header */}
+            <div className="bg-slate-950/90 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                  <Presentation className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      Pratinjau Presentasi Admin
+                    </span>
+                    <span className="text-xs text-slate-400 truncate hidden sm:inline">
+                      {adminSlidePreviewCourse.category}
+                    </span>
+                  </div>
+                  <h2 className="text-sm sm:text-base font-bold text-white truncate">
+                    {adminSlidePreviewCourse.title}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <a
+                  href={getGoogleSlideExternalUrl(adminSlidePreviewCourse.slideUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors text-xs flex items-center gap-1"
+                  title="Buka langsung di Google Slides"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span className="hidden md:inline">Buka Tab Baru</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setAdminSlidePreviewCourse(null)}
+                  className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                  title="Tutup (ESC)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Presentation Viewport */}
+            <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+              <iframe
+                src={parseGoogleSlideEmbedUrl(adminSlidePreviewCourse.slideUrl)}
+                title={adminSlidePreviewCourse.title}
+                className="w-full h-full border-0"
+                allowFullScreen={true}
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-950/95 border-t border-slate-800 px-4 py-2 text-[11px] text-slate-400 flex items-center justify-between gap-2 shrink-0">
+              <span className="text-emerald-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Tautan embed valid & siap disajikan kepada pengguna di portal.
+              </span>
+              <button
+                type="button"
+                onClick={() => setAdminSlidePreviewCourse(null)}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs"
+              >
+                Tutup Pratinjau
+              </button>
+            </div>
           </div>
         </div>
       )}

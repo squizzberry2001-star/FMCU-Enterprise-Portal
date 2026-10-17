@@ -35,6 +35,7 @@ export interface TrainingCourse {
   estimatedHours: string;
   thumbnailUrl?: string;
   status: "in-progress" | "not-started" | "completed";
+  slideUrl?: string;
 }
 
 export interface CalendarEvent {

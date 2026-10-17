@@ -136,7 +136,8 @@ export const trainingCoursesData: TrainingCourse[] = [
     totalModules: 8,
     completedModules: 6,
     estimatedHours: "4 Jam",
-    status: "in-progress"
+    status: "in-progress",
+    slideUrl: "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
   },
   {
     id: "crs-102",
@@ -160,7 +161,8 @@ export const trainingCoursesData: TrainingCourse[] = [
     totalModules: 10,
     completedModules: 3,
     estimatedHours: "6 Jam",
-    status: "in-progress"
+    status: "in-progress",
+    slideUrl: "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing"
   },
   {
     id: "crs-104",

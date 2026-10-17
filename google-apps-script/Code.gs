@@ -48,9 +48,9 @@ function setupDatabase() {
   if (sheetCourses.getLastRow() === 0) {
     sheetCourses.appendRow([
       "id", "title", "category", "progress", "dueDate", 
-      "isMandatory", "totalModules", "completedModules", "estimatedHours", "status", "updatedAt"
+      "isMandatory", "totalModules", "completedModules", "estimatedHours", "status", "slideUrl", "updatedAt"
     ]);
-    sheetCourses.getRange(1, 1, 1, 11).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
+    sheetCourses.getRange(1, 1, 1, 12).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
   }
 
   // 3. Table Events
@@ -340,7 +340,12 @@ function saveTableData(sheetName, dataList) {
 
   if (!dataList || dataList.length === 0) return;
 
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (sheetName === SHEET_NAMES.COURSES && headers.indexOf("slideUrl") === -1) {
+    sheet.getRange(1, lastCol + 1).setValue("slideUrl");
+    sheet.getRange(1, lastCol + 1).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
+    headers.push("slideUrl");
+  }
   const rowsToWrite = [];
 
   for (let i = 0; i < dataList.length; i++) {
