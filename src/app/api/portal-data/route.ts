@@ -16,7 +16,25 @@ export async function GET(request: NextRequest) {
     }
     try {
       const icsRes = await fetch(icalUrl, { cache: "no-store" });
+      if (!icsRes.ok) {
+        if (icsRes.status === 404) {
+          return NextResponse.json({
+            success: false,
+            error: "Google Calendar mengembalikan error 404 (Tidak Ditemukan). Kalender belum disetel 'Make available to public' di Setelan Google Calendar, atau URL iCal salah."
+          });
+        }
+        return NextResponse.json({
+          success: false,
+          error: `Gagal membaca iCal dari server (HTTP ${icsRes.status}: ${icsRes.statusText})`
+        });
+      }
       const text = await icsRes.text();
+      if (!text.includes("BEGIN:VCALENDAR")) {
+        return NextResponse.json({
+          success: false,
+          error: "Tautan tidak menghasilkan data kalender iCal yang valid."
+        });
+      }
       return NextResponse.json({ success: true, icsContent: text }, {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",

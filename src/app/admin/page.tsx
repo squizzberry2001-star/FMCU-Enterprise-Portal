@@ -440,34 +440,66 @@ export default function AdminPage() {
   };
 
   // ==================== EVENT CRUD & GOOGLE CALENDAR ====================
-  const handleSyncGoogleCalendar = async () => {
+  const handleSyncByIcal = async () => {
+    if (!gcalIcalUrl || !gcalIcalUrl.trim()) {
+      showToast("Harap masukkan Tautan iCal publik (.ics) terlebih dahulu.");
+      setGcalSyncMessage("✕ Harap masukkan Tautan iCal publik (.ics) terlebih dahulu.");
+      return;
+    }
+    setIsSyncingGcal(true);
+    setGcalSyncMessage(null);
+    try {
+      saveGoogleCalendarIcalUrl(gcalIcalUrl);
+      const res = await fetchEventsFromIcalUrl(gcalIcalUrl.trim());
+      if (res.success && res.events && res.events.length > 0) {
+        setEvents(res.events);
+        saveStoredEvents(res.events);
+        triggerBackgroundCloudSync(apps, courses, res.events, docs, bannerAlert);
+        showToast(`Berhasil menyinkronkan ${res.events.length} jadwal dari iCal!`);
+        setGcalSyncMessage(`✓ Berhasil menarik ${res.events.length} jadwal dari iCal.`);
+      } else {
+        const errMsg = res.error || "Tidak ada jadwal yang ditemukan di tautan iCal ini.";
+        showToast(errMsg);
+        setGcalSyncMessage(`✕ ${errMsg}`);
+      }
+    } catch (err: any) {
+      showToast("Terjadi kesalahan saat membaca link iCal.");
+      setGcalSyncMessage(`✕ Error: ${err.message}`);
+    } finally {
+      setIsSyncingGcal(false);
+    }
+  };
+
+  const handleSyncByCalendarId = async () => {
     setIsSyncingGcal(true);
     setGcalSyncMessage(null);
     try {
       saveGoogleCalendarId(gcalId);
-      saveGoogleCalendarIcalUrl(gcalIcalUrl);
-
-      let res: { success: boolean; events?: CalendarEvent[]; error?: string } = { success: false };
-      if (gcalIcalUrl && gcalIcalUrl.trim().length > 0) {
-        res = await fetchEventsFromIcalUrl(gcalIcalUrl.trim());
-      } else {
-        res = await syncGoogleCalendarEvents(gcalId || "primary");
-      }
-
+      const res = await syncGoogleCalendarEvents(gcalId || "primary");
       if (res.success && res.events && res.events.length > 0) {
         setEvents(res.events);
         saveStoredEvents(res.events);
         triggerBackgroundCloudSync(apps, courses, res.events, docs, bannerAlert);
         showToast(`Berhasil menyinkronkan ${res.events.length} jadwal dari Google Calendar!`);
-        setGcalSyncMessage(`Tersinkronisasi ${res.events.length} jadwal dari Google Calendar.`);
+        setGcalSyncMessage(`✓ Berhasil menarik ${res.events.length} jadwal dari Google Calendar.`);
       } else {
-        showToast(res.error || "Tidak ada jadwal ditemukan di Google Calendar.");
-        setGcalSyncMessage(res.error || "Gagal menarik data dari Google Calendar.");
+        const errMsg = res.error || (res as any).message || "Tidak ada jadwal ditemukan atau Google Apps Script belum diperbarui.";
+        showToast(errMsg);
+        setGcalSyncMessage(`✕ ${errMsg}`);
       }
     } catch (err: any) {
       showToast("Terjadi kesalahan saat sinkronisasi Google Calendar.");
+      setGcalSyncMessage(`✕ Error: ${err.message}`);
     } finally {
       setIsSyncingGcal(false);
+    }
+  };
+
+  const handleSyncGoogleCalendar = async () => {
+    if (gcalIcalUrl && gcalIcalUrl.trim().length > 0) {
+      await handleSyncByIcal();
+    } else {
+      await handleSyncByCalendarId();
     }
   };
 
@@ -1008,15 +1040,15 @@ export default function AdminPage() {
             </div>
 
             {/* Google Calendar Direct Sync Card */}
-            <div className="bg-slate-900/80 border border-blue-900/40 rounded-xl p-4 sm:p-5 space-y-3">
+            <div className="bg-slate-900/80 border border-blue-900/40 rounded-xl p-4 sm:p-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
                     <Calendar className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-xs sm:text-sm">Sinkronisasi Otomatis Google Calendar</h3>
-                    <p className="text-[11px] text-slate-400">Hubungkan ID Kalender atau tautan iCal agar jadwal training terisi otomatis ke portal.</p>
+                    <h3 className="font-bold text-white text-xs sm:text-sm">Integrasi & Sinkronisasi Google Calendar</h3>
+                    <p className="text-[11px] text-slate-400">Pilih salah satu metode di bawah untuk menarik jadwal otomatis ke portal.</p>
                   </div>
                 </div>
 
@@ -1027,42 +1059,84 @@ export default function AdminPage() {
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-all self-start sm:self-auto shrink-0 shadow-xs"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGcal ? "animate-spin" : ""}`} />
-                  <span>{isSyncingGcal ? "Menyinkronkan..." : "Tarik dari Google Calendar"}</span>
+                  <span>{isSyncingGcal ? "Menyinkronkan..." : "Sinkronkan Sekarang"}</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="block text-slate-400 mb-1">
-                    Google Calendar ID <span className="text-slate-500">(Default: &quot;primary&quot; atau email kalender)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={gcalId}
-                    onChange={(e) => setGcalId(e.target.value)}
-                    placeholder="primary atau alamat_kalender@group.calendar.google.com"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {/* Method 1: Calendar ID via Google Apps Script */}
+                <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-white">Metode 1: Google Calendar ID</span>
+                      <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-medium">Google Apps Script</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Menggunakan CalendarApp internal. Kalender <strong className="text-slate-300">tidak perlu publik</strong> jika Apps Script dibuat di akun yang sama.
+                    </p>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Calendar ID / Email:</label>
+                      <input
+                        type="text"
+                        value={gcalId}
+                        onChange={(e) => setGcalId(e.target.value)}
+                        placeholder="regional.bestie@familymartindonesia.com"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncByCalendarId}
+                    disabled={isSyncingGcal}
+                    className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 hover:text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isSyncingGcal ? "animate-spin" : ""}`} />
+                    <span>Tarik via Calendar ID (Apps Script)</span>
+                  </button>
                 </div>
 
-                <div>
-                  <label className="block text-slate-400 mb-1">
-                    Tautan iCal / Feed Publik .ics <span className="text-slate-500">(Opsional / Alternatif)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={gcalIcalUrl}
-                    onChange={(e) => setGcalIcalUrl(e.target.value)}
-                    placeholder="https://calendar.google.com/calendar/ical/.../public/basic.ics"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-                  />
+                {/* Method 2: Public iCal Feed (.ics) */}
+                <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5 flex flex-col justify-between">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-white">Metode 2: Tautan iCal Publik (.ics)</span>
+                      <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded border border-purple-500/20 font-medium">iCal URL</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Langsung dibaca server. Syarat: kalender harus dicentang <strong className="text-amber-300 font-semibold">&quot;Make available to public&quot;</strong> di Google Calendar.
+                    </p>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Alamat iCal (.ics):</label>
+                      <input
+                        type="text"
+                        value={gcalIcalUrl}
+                        onChange={(e) => setGcalIcalUrl(e.target.value)}
+                        placeholder="https://calendar.google.com/calendar/ical/.../public/basic.ics"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-purple-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncByIcal}
+                    disabled={isSyncingGcal}
+                    className="w-full py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 hover:text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isSyncingGcal ? "animate-spin" : ""}`} />
+                    <span>Tarik via Tautan iCal (.ics)</span>
+                  </button>
                 </div>
               </div>
 
               {gcalSyncMessage && (
-                <div className="text-[11px] text-blue-300 bg-blue-950/40 border border-blue-800/60 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                  <span>{gcalSyncMessage}</span>
+                <div className={`text-xs px-3.5 py-2.5 rounded-lg flex items-start gap-2 ${
+                  gcalSyncMessage.startsWith("✕") 
+                    ? "text-rose-300 bg-rose-950/50 border border-rose-800" 
+                    : "text-emerald-300 bg-emerald-950/50 border border-emerald-800"
+                }`}>
+                  <span className={`w-2 h-2 rounded-full mt-1 ${gcalSyncMessage.startsWith("✕") ? "bg-rose-400" : "bg-emerald-400"} shrink-0`} />
+                  <span className="leading-snug">{gcalSyncMessage}</span>
                 </div>
               )}
             </div>
