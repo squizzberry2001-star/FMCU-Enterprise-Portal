@@ -102,6 +102,7 @@ import {
   X
 } from "lucide-react";
 import { parseGoogleSlideEmbedUrl, getGoogleSlideExternalUrl } from "@/lib/slideUtils";
+import { getEmbedPdfUrl } from "@/lib/pdfUtils";
 
 export default function AdminPage() {
   // Authentication State
@@ -136,6 +137,7 @@ export default function AdminPage() {
 
   const [docModalOpen, setDocModalOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<DocumentItem | null>(null);
+  const [adminPdfPreviewDoc, setAdminPdfPreviewDoc] = useState<DocumentItem | null>(null);
 
   // Settings Form States
   const [newPin, setNewPin] = useState("");
@@ -1301,6 +1303,14 @@ export default function AdminPage() {
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
+                      type="button"
+                      onClick={() => setAdminPdfPreviewDoc(d)}
+                      className="p-1.5 text-blue-400 hover:text-white rounded-lg hover:bg-slate-700 transition-colors"
+                      title="Lihat / Pratinjau PDF"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       onClick={() => {
                         setEditingDoc(d);
                         setSelectedDocFile(null);
@@ -2461,6 +2471,94 @@ const firebaseConfig = {
               <button
                 type="button"
                 onClick={() => setAdminSlidePreviewCourse(null)}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs"
+              >
+                Tutup Pratinjau
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== ADMIN PDF PREVIEW MODAL ==================== */}
+      {adminPdfPreviewDoc && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl flex flex-col overflow-hidden shadow-2xl w-full max-w-5xl h-[88vh] max-h-[820px]">
+            {/* Header */}
+            <div className="bg-slate-950/90 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      Pratinjau PDF Admin
+                    </span>
+                    <span className="text-xs text-slate-400 truncate hidden sm:inline">
+                      {adminPdfPreviewDoc.category} • {adminPdfPreviewDoc.format}
+                    </span>
+                  </div>
+                  <h2 className="text-sm sm:text-base font-bold text-white truncate">
+                    {adminPdfPreviewDoc.title}
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {adminPdfPreviewDoc.downloadUrl && adminPdfPreviewDoc.downloadUrl !== "#" && (
+                  <a
+                    href={adminPdfPreviewDoc.downloadUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors text-xs flex items-center gap-1"
+                    title="Buka di Tab Baru"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span className="hidden md:inline">Buka Tab Baru</span>
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setAdminPdfPreviewDoc(null)}
+                  className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                  title="Tutup (ESC)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Viewport */}
+            <div className="relative flex-1 bg-slate-950 flex items-center justify-center overflow-hidden">
+              {getEmbedPdfUrl(adminPdfPreviewDoc) ? (
+                <iframe
+                  src={getEmbedPdfUrl(adminPdfPreviewDoc)}
+                  title={adminPdfPreviewDoc.title}
+                  className="w-full h-full border-0 bg-slate-900"
+                  allowFullScreen={true}
+                />
+              ) : (
+                <div className="p-8 text-center text-slate-400 space-y-2 max-w-md">
+                  <FileText className="w-12 h-12 text-slate-600 mx-auto" />
+                  <p className="text-sm font-semibold text-white">{adminPdfPreviewDoc.title}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Dokumen ini adalah data arsip standar. Ketika diunggah via Google Drive, tautan preview interaktif PDF otomatis aktif.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-950/95 border-t border-slate-800 px-4 py-2 text-[11px] text-slate-400 flex items-center justify-between gap-2 shrink-0">
+              <span className="text-emerald-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                Pratinjau dokumen interaktif siap disajikan di portal pengguna.
+              </span>
+              <button
+                type="button"
+                onClick={() => setAdminPdfPreviewDoc(null)}
                 className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs"
               >
                 Tutup Pratinjau
