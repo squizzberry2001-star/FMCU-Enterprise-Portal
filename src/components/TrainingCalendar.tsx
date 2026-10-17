@@ -84,15 +84,36 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events }) =>
 
   // Helper to parse event date into comparable parts
   const parseEventDayMonth = (dateStr: string) => {
+    if (!dateStr) return { day: "1", month: "Okt", year: "2026" };
+
+    // Handle ISO timestamp string (e.g. from Google Sheets or CalendarApp: "2026-09-08T17:00:00.000Z")
+    if (dateStr.includes("T") || (dateStr.includes("-") && !dateStr.includes(" "))) {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        return {
+          day: String(d.getDate()),
+          month: MONTH_SHORT[d.getMonth()],
+          year: String(d.getFullYear())
+        };
+      }
+    }
+
     const parts = dateStr.trim().split(/\s+/);
     if (parts.length >= 2) {
+      let monthPart = parts[1];
+      const foundIdx = MONTH_NAMES.findIndex(
+        (m) => m.toLowerCase().startsWith(monthPart.toLowerCase().slice(0, 3))
+      );
+      if (foundIdx !== -1) {
+        monthPart = MONTH_SHORT[foundIdx];
+      }
       return {
         day: parts[0],
-        month: parts[1],
+        month: monthPart,
         year: parts[2] || "2026"
       };
     }
-    return { day: "25", month: "Okt", year: "2026" };
+    return { day: "1", month: "Okt", year: "2026" };
   };
 
   // Calendar Grid Calculations

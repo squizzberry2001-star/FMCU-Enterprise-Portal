@@ -150,32 +150,40 @@ export function parseIcsCalendarData(icsString: string): CalendarEvent[] {
     let endDate: Date | null = null;
 
     if (dtstart) {
-      if (dtstart.length === 8) {
+      const isUtc = dtstart.includes("Z");
+      const clean = dtstart.replace(/[^0-9T]/g, "");
+      if (clean.length === 8) {
         // YYYYMMDD
-        const y = parseInt(dtstart.substring(0, 4), 10);
-        const m = parseInt(dtstart.substring(4, 6), 10) - 1;
-        const d = parseInt(dtstart.substring(6, 8), 10);
+        const y = parseInt(clean.substring(0, 4), 10);
+        const m = parseInt(clean.substring(4, 6), 10) - 1;
+        const d = parseInt(clean.substring(6, 8), 10);
         startDate = new Date(y, m, d, 9, 0);
-      } else {
-        // YYYYMMDDTHHMMSSZ
-        const clean = dtstart.replace(/[^0-9T]/g, "");
+      } else if (clean.length >= 13) {
         const y = parseInt(clean.substring(0, 4), 10);
         const m = parseInt(clean.substring(4, 6), 10) - 1;
         const d = parseInt(clean.substring(6, 8), 10);
         const h = parseInt(clean.substring(9, 11) || "9", 10);
         const min = parseInt(clean.substring(11, 13) || "0", 10);
-        startDate = new Date(Date.UTC(y, m, d, h, min));
+        startDate = isUtc ? new Date(Date.UTC(y, m, d, h, min)) : new Date(y, m, d, h, min);
       }
     }
 
-    if (dtend && dtend.length >= 8) {
+    if (dtend) {
+      const isUtc = dtend.includes("Z");
       const clean = dtend.replace(/[^0-9T]/g, "");
-      const y = parseInt(clean.substring(0, 4), 10);
-      const m = parseInt(clean.substring(4, 6), 10) - 1;
-      const d = parseInt(clean.substring(6, 8), 10);
-      const h = parseInt(clean.substring(9, 11) || "11", 10);
-      const min = parseInt(clean.substring(11, 13) || "0", 10);
-      endDate = new Date(Date.UTC(y, m, d, h, min));
+      if (clean.length === 8) {
+        const y = parseInt(clean.substring(0, 4), 10);
+        const m = parseInt(clean.substring(4, 6), 10) - 1;
+        const d = parseInt(clean.substring(6, 8), 10);
+        endDate = new Date(y, m, d, 17, 0);
+      } else if (clean.length >= 13) {
+        const y = parseInt(clean.substring(0, 4), 10);
+        const m = parseInt(clean.substring(4, 6), 10) - 1;
+        const d = parseInt(clean.substring(6, 8), 10);
+        const h = parseInt(clean.substring(9, 11) || "11", 10);
+        const min = parseInt(clean.substring(11, 13) || "0", 10);
+        endDate = isUtc ? new Date(Date.UTC(y, m, d, h, min)) : new Date(y, m, d, h, min);
+      }
     }
 
     const start = startDate || new Date();

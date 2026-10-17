@@ -285,25 +285,61 @@ export async function syncGoogleCalendarEvents(calendarId: string = "primary"): 
 }
 
 /**
- * Fetch and parse events from public Google Calendar iCal (.ics) URL
+ * Fetch and parse events from public Google Calendar iCal (.ics) URL (supports single or multiple URLs)
  */
 export async function fetchEventsFromIcalUrl(icalUrl: string): Promise<{
   success: boolean;
   events?: CalendarEvent[];
   error?: string;
 }> {
-  if (!icalUrl) return { success: false, error: "URL iCal belum diisi." };
+  if (!icalUrl || !icalUrl.trim()) return { success: false, error: "URL iCal belum diisi." };
+
+  const urls = icalUrl
+    .split(/[\n,]+/)
+    .map((u) => u.trim())
+    .filter((u) => u.startsWith("http"));
+
+  if (urls.length === 0) {
+    return { success: false, error: "Format URL iCal tidak valid (harus dimulai dengan https://)." };
+  }
 
   try {
-    const res = await fetch(`/api/portal-data?action=fetchIcal&url=${encodeURIComponent(icalUrl)}`, {
-      cache: "no-store",
-    });
-    const result = await res.json();
-    if (result.success && result.icsContent) {
-      const parsed = parseIcsCalendarData(result.icsContent);
-      return { success: true, events: parsed };
+    const allEvents: CalendarEvent[] = [];
+    const errors: string[] = [];
+
+    for (const singleUrl of urls) {
+      try {
+        const res = await fetch(`/api/portal-data?action=fetchIcal&url=${encodeURIComponent(singleUrl)}`, {
+          cache: "no-store",
+        });
+        const result = await res.json();
+        if (result.success && result.icsContent) {
+          const parsed = parseIcsCalendarData(result.icsContent);
+          allEvents.push(...parsed);
+        } else if (result.error) {
+          errors.push(result.error);
+        }
+      } catch (err: any) {
+        errors.push(err.message);
+      }
     }
-    return { success: false, error: result.error || "Gagal membaca format iCal." };
+
+    if (allEvents.length > 0) {
+      // Deduplicate by googleEventId or title+date+time
+      const seen = new Set<string>();
+      const uniqueEvents = allEvents.filter((ev) => {
+        const key = ev.googleEventId || `${ev.title}-${ev.date}-${ev.time}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return { success: true, events: uniqueEvents };
+    }
+
+    return {
+      success: false,
+      error: errors[0] || "Tidak ada agenda jadwal yang ditemukan pada tautan iCal tersebut.",
+    };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
