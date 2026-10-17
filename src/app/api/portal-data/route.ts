@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import defaultCloudConfig from "@/config/cloudConfig.json";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const gasUrl = searchParams.get("gasUrl") || process.env.NEXT_PUBLIC_GAS_API_URL;
+  const gasUrl = searchParams.get("gasUrl") || process.env.NEXT_PUBLIC_GAS_API_URL || defaultCloudConfig.gasApiUrl;
   const action = searchParams.get("action") || "getAll";
 
   if (!gasUrl) {
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const gasUrl = searchParams.get("gasUrl") || process.env.NEXT_PUBLIC_GAS_API_URL;
+  const gasUrl = searchParams.get("gasUrl") || process.env.NEXT_PUBLIC_GAS_API_URL || defaultCloudConfig.gasApiUrl;
 
   if (!gasUrl) {
     return NextResponse.json(

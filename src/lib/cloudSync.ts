@@ -1,5 +1,6 @@
 import { OneGateApp, TrainingCourse, CalendarEvent, DocumentItem } from "@/types";
 import { BannerAlertConfig } from "@/lib/storage";
+import defaultCloudConfig from "@/config/cloudConfig.json";
 
 const CLOUD_KEYS = {
   GAS_URL: "fmcu_gas_api_url_v1",
@@ -10,8 +11,9 @@ const CLOUD_KEYS = {
 const isBrowser = typeof window !== "undefined";
 
 export const getGasApiUrl = (): string => {
-  if (!isBrowser) return process.env.NEXT_PUBLIC_GAS_API_URL || "";
-  return localStorage.getItem(CLOUD_KEYS.GAS_URL) || process.env.NEXT_PUBLIC_GAS_API_URL || "";
+  const defaultUrl = defaultCloudConfig.gasApiUrl || "";
+  if (!isBrowser) return process.env.NEXT_PUBLIC_GAS_API_URL || defaultUrl;
+  return localStorage.getItem(CLOUD_KEYS.GAS_URL) || process.env.NEXT_PUBLIC_GAS_API_URL || defaultUrl;
 };
 
 export const saveGasApiUrl = (url: string): void => {
