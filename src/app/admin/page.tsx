@@ -43,6 +43,9 @@ import {
   saveGoogleCalendarId, 
   getGoogleCalendarIcalUrl, 
   saveGoogleCalendarIcalUrl,
+  getGoogleCalendarEmbedUrl,
+  saveGoogleCalendarEmbedUrl,
+  parseGoogleCalendarEmbedUrl,
   generateGoogleCalendarAddUrl
 } from "@/lib/calendarUtils";
 import {
@@ -187,6 +190,7 @@ export default function AdminPage() {
   // Google Calendar Integration States
   const [gcalId, setGcalId] = useState<string>("primary");
   const [gcalIcalUrl, setGcalIcalUrl] = useState<string>("");
+  const [gcalEmbedUrl, setGcalEmbedUrl] = useState<string>("");
   const [isSyncingGcal, setIsSyncingGcal] = useState(false);
   const [gcalSyncMessage, setGcalSyncMessage] = useState<string | null>(null);
 
@@ -206,6 +210,7 @@ export default function AdminPage() {
     setLastSync(storedLastSync);
     setGcalId(getGoogleCalendarId());
     setGcalIcalUrl(getGoogleCalendarIcalUrl());
+    setGcalEmbedUrl(getGoogleCalendarEmbedUrl());
 
     // Load Firebase Google Console Config
     const fbConf = getFirebaseConfig();
@@ -501,6 +506,20 @@ export default function AdminPage() {
     } else {
       await handleSyncByCalendarId();
     }
+  };
+
+  const handleSaveEmbedUrl = () => {
+    const clean = parseGoogleCalendarEmbedUrl(gcalEmbedUrl);
+    setGcalEmbedUrl(clean);
+    saveGoogleCalendarEmbedUrl(clean);
+    const updatedBanner = {
+      ...bannerAlert,
+      googleCalendarEmbedUrl: clean,
+    };
+    setBannerAlert(updatedBanner);
+    saveStoredBannerAlert(updatedBanner);
+    triggerBackgroundCloudSync(apps, courses, events, docs, updatedBanner);
+    showToast("Tautan embed Google Calendar Live berhasil disimpan & disinkronkan ke seluruh user!");
   };
 
   const handleSaveEvent = (evtData: Partial<CalendarEvent>) => {
@@ -1125,6 +1144,47 @@ export default function AdminPage() {
                   >
                     <RefreshCw className={`w-3 h-3 ${isSyncingGcal ? "animate-spin" : ""}`} />
                     <span>Tarik via Tautan iCal (.ics)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Method 3: Google Calendar Live (Embed / Iframe Link) */}
+              <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-white">Tautan Embed / Iframe Google Calendar Live</span>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20 font-medium">Tampilan Web Langsung</span>
+                  </div>
+                  {gcalEmbedUrl && (
+                    <a
+                      href={parseGoogleCalendarEmbedUrl(gcalEmbedUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-blue-400 hover:underline flex items-center gap-1 self-start sm:self-auto"
+                    >
+                      <span>Tes Buka Embed</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Menampilkan kalender resmi Google Calendar di portal web. Anda bisa memasukkan URL embed atau kode tag <code className="text-emerald-400 bg-slate-900 px-1 py-0.5 rounded">&lt;iframe src=&quot;...&quot;&gt;&lt;/iframe&gt;</code> langsung.
+                </p>
+                <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                  <input
+                    type="text"
+                    value={gcalEmbedUrl}
+                    onChange={(e) => setGcalEmbedUrl(e.target.value)}
+                    placeholder="https://calendar.google.com/calendar/embed?src=... atau <iframe src='...'></iframe>"
+                    className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveEmbedUrl}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Simpan Embed Kalender</span>
                   </button>
                 </div>
               </div>

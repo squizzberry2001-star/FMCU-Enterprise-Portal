@@ -13,6 +13,7 @@ export interface BannerAlertConfig {
   title: string;
   dueDate: string;
   linkText: string;
+  googleCalendarEmbedUrl?: string;
 }
 
 const STORAGE_KEYS = {
@@ -31,6 +32,7 @@ export const initialBannerAlert: BannerAlertConfig = {
   title: "Pelatihan wajib: HSE Compliance 2026",
   dueDate: "28 Okt 2026",
   linkText: "Buka Modul",
+  googleCalendarEmbedUrl: "https://calendar.google.com/calendar/embed?src=c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb%40group.calendar.google.com&ctz=Asia%2FJakarta",
 };
 
 // Helper safe localStorage access

@@ -21,10 +21,11 @@ import {
   Info,
   X
 } from "lucide-react";
-import { generateGoogleCalendarAddUrl } from "@/lib/calendarUtils";
+import { generateGoogleCalendarAddUrl, getGoogleCalendarEmbedUrl } from "@/lib/calendarUtils";
 
 interface TrainingCalendarProps {
   events: CalendarEvent[];
+  embedUrl?: string;
 }
 
 const MONTH_NAMES = [
@@ -39,8 +40,9 @@ const MONTH_SHORT = [
 
 const DAY_NAMES = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
-export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events }) => {
-  const [viewMode, setViewMode] = useState<"agenda" | "grid">("agenda");
+export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embedUrl }) => {
+  const [viewMode, setViewMode] = useState<"agenda" | "grid" | "embed">("embed");
+  const activeEmbedUrl = embedUrl || getGoogleCalendarEmbedUrl();
   const [registered, setRegistered] = useState<string[]>(["evt-201"]);
   const [selectedType, setSelectedType] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -237,20 +239,20 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events }) =>
           </h2>
         </div>
 
-        {/* View Switcher: Agenda Cards vs Monthly Grid */}
+        {/* View Switcher: Google Live vs Monthly Grid vs Agenda Cards */}
         <div className="flex items-center gap-2 self-start md:self-center">
           <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1">
             <button
               type="button"
-              onClick={() => { setViewMode("agenda"); setSelectedDateFilter(null); }}
+              onClick={() => setViewMode("embed")}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                viewMode === "agenda"
-                  ? "bg-white text-slate-900 shadow-xs"
+                viewMode === "embed"
+                  ? "bg-white text-blue-700 shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <List className="w-3.5 h-3.5" />
-              <span>Daftar Agenda</span>
+              <Calendar className="w-3.5 h-3.5 text-blue-600" />
+              <span>Google Calendar Live</span>
             </button>
             <button
               type="button"
@@ -264,45 +266,59 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events }) =>
               <CalendarDays className="w-3.5 h-3.5" />
               <span>Kalender Bulanan</span>
             </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode("agenda"); setSelectedDateFilter(null); }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                viewMode === "agenda"
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Daftar Agenda</span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Filter and Search Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/80 p-3 sm:p-4 rounded-xl shadow-2xs">
-        {/* Category Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
-          {eventTypes.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => { setSelectedType(t); setSelectedDateFilter(null); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
-                selectedType === t
-                  ? "bg-slate-900 text-white font-semibold shadow-xs"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-600"
-              }`}
-            >
-              {t === "all" ? "Semua Sesi" : t}
-            </button>
-          ))}
-        </div>
+      {/* Filter and Search Row (only for grid & agenda views) */}
+      {viewMode !== "embed" && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/80 p-3 sm:p-4 rounded-xl shadow-2xs">
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
+            {eventTypes.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setSelectedType(t); setSelectedDateFilter(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                  selectedType === t
+                    ? "bg-slate-900 text-white font-semibold shadow-xs"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                }`}
+              >
+                {t === "all" ? "Semua Sesi" : t}
+              </button>
+            ))}
+          </div>
 
-        {/* Quick Search Input */}
-        <div className="relative w-full sm:w-64 shrink-0">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari topik, trainer, lokasi..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder:text-slate-400 transition-all"
-          />
+          {/* Quick Search Input */}
+          <div className="relative w-full sm:w-64 shrink-0">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari topik, trainer, lokasi..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white text-slate-800 placeholder:text-slate-400 transition-all"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Date Filter Notification Banner if selected from Grid */}
-      {selectedDateFilter && (
+      {viewMode !== "embed" && selectedDateFilter && (
         <div className="bg-blue-50/80 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-blue-900">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
@@ -317,6 +333,41 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events }) =>
           >
             Tampilkan Semua Tanggal
           </button>
+        </div>
+      )}
+
+      {/* ==================== VIEW 0: GOOGLE CALENDAR LIVE EMBED ==================== */}
+      {viewMode === "embed" && (
+        <div className="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+          <div className="bg-gradient-to-r from-slate-50 to-blue-50/40 border-b border-slate-200/80 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <div>
+                <span className="font-bold text-slate-800 text-xs sm:text-sm">Google Calendar Terintegrasi Langsung (Live)</span>
+                <span className="text-slate-500 block text-[11px]">Menampilkan kalender resmi Google Workspace FMCU secara interaktif dan real-time.</span>
+              </div>
+            </div>
+            <a
+              href={activeEmbedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-blue-600 font-semibold text-xs transition-colors self-start sm:self-auto shrink-0 shadow-2xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Buka Layar Penuh</span>
+            </a>
+          </div>
+
+          <div className="w-full h-[620px] sm:h-[720px] bg-slate-50 relative">
+            <iframe
+              src={activeEmbedUrl}
+              title="Google Calendar Live FMCU"
+              className="w-full h-full border-0"
+              style={{ border: 0 }}
+              frameBorder="0"
+              scrolling="no"
+            />
+          </div>
         </div>
       )}
 

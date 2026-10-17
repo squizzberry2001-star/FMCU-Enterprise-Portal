@@ -295,7 +295,7 @@ export default function Home() {
           )}
 
           {activeTab === "calendar" && (
-            <TrainingCalendar events={events} />
+            <TrainingCalendar events={events} embedUrl={bannerAlert.googleCalendarEmbedUrl} />
           )}
 
           {activeTab === "docs" && (

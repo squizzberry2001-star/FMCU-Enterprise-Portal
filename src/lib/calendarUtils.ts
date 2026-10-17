@@ -6,17 +6,39 @@
 
 import { CalendarEvent } from "@/types";
 
+export const DEFAULT_GCAL_EMBED_URL = "https://calendar.google.com/calendar/embed?src=c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb%40group.calendar.google.com&ctz=Asia%2FJakarta";
+
 const CALENDAR_STORAGE_KEYS = {
   CALENDAR_ID: "fmcu_gcal_id_v1",
   ICAL_URL: "fmcu_gcal_ical_url_v1",
+  EMBED_URL: "fmcu_gcal_embed_url_v1",
   LAST_SYNC: "fmcu_gcal_last_sync_v1",
 };
 
 const isBrowser = typeof window !== "undefined";
 
+export function parseGoogleCalendarEmbedUrl(input: string): string {
+  if (!input) return "";
+  const trimmed = input.trim();
+  const match = trimmed.match(/src=["']([^"']+)["']/i);
+  if (match) return match[1];
+  return trimmed;
+}
+
+export function getGoogleCalendarEmbedUrl(): string {
+  if (!isBrowser) return DEFAULT_GCAL_EMBED_URL;
+  return localStorage.getItem(CALENDAR_STORAGE_KEYS.EMBED_URL) || DEFAULT_GCAL_EMBED_URL;
+}
+
+export function saveGoogleCalendarEmbedUrl(url: string): void {
+  if (!isBrowser) return;
+  const clean = parseGoogleCalendarEmbedUrl(url);
+  localStorage.setItem(CALENDAR_STORAGE_KEYS.EMBED_URL, clean || DEFAULT_GCAL_EMBED_URL);
+}
+
 export function getGoogleCalendarId(): string {
-  if (!isBrowser) return "primary";
-  return localStorage.getItem(CALENDAR_STORAGE_KEYS.CALENDAR_ID) || "primary";
+  if (!isBrowser) return "c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb@group.calendar.google.com";
+  return localStorage.getItem(CALENDAR_STORAGE_KEYS.CALENDAR_ID) || "c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb@group.calendar.google.com";
 }
 
 export function saveGoogleCalendarId(calendarId: string): void {
