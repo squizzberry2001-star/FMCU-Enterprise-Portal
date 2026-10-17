@@ -30,6 +30,7 @@ import {
   initialBannerAlert
 } from "@/lib/storage";
 import { fetchPortalDataFromCloud } from "@/lib/cloudSync";
+import { isFirebaseConfigured, subscribeToPortalData } from "@/lib/firebase";
 import { 
   LayoutGrid, 
   BookOpen, 
@@ -53,40 +54,67 @@ export default function Home() {
   const [bannerAlert, setBannerAlert] = useState<BannerAlertConfig>(initialBannerAlert);
 
   useEffect(() => {
-    // Load persisted state from storage
+    // 1. Load persisted state from local storage (0ms render)
     setApps(getStoredApps());
     setCourses(getStoredCourses());
     setEvents(getStoredEvents());
     setDocs(getStoredDocuments());
     setBannerAlert(getStoredBannerAlert());
 
-    // Fetch synchronized data from cloud (Google Sheets) if configured
-    fetchPortalDataFromCloud().then((res) => {
-      if (res.success && res.data) {
-        if (res.data.apps && res.data.apps.length > 0) {
-          setApps(res.data.apps);
-          saveStoredApps(res.data.apps);
+    // 2. Real-time synchronization with Google Console Firestore
+    let unsubscribeFirestore: (() => void) | null = null;
+    if (isFirebaseConfigured()) {
+      unsubscribeFirestore = subscribeToPortalData((cloudData) => {
+        if (cloudData.apps && cloudData.apps.length > 0) {
+          setApps(cloudData.apps);
+          saveStoredApps(cloudData.apps);
         }
-        if (res.data.courses && res.data.courses.length > 0) {
-          setCourses(res.data.courses);
-          saveStoredCourses(res.data.courses);
+        if (cloudData.courses && cloudData.courses.length > 0) {
+          setCourses(cloudData.courses);
+          saveStoredCourses(cloudData.courses);
         }
-        if (res.data.events && res.data.events.length > 0) {
-          setEvents(res.data.events);
-          saveStoredEvents(res.data.events);
+        if (cloudData.events && cloudData.events.length > 0) {
+          setEvents(cloudData.events);
+          saveStoredEvents(cloudData.events);
         }
-        if (res.data.docs && res.data.docs.length > 0) {
-          setDocs(res.data.docs);
-          saveStoredDocuments(res.data.docs);
+        if (cloudData.docs && cloudData.docs.length > 0) {
+          setDocs(cloudData.docs);
+          saveStoredDocuments(cloudData.docs);
         }
-        if (res.data.bannerAlert) {
-          setBannerAlert(res.data.bannerAlert);
-          saveStoredBannerAlert(res.data.bannerAlert);
+        if (cloudData.bannerAlert) {
+          setBannerAlert(cloudData.bannerAlert);
+          saveStoredBannerAlert(cloudData.bannerAlert);
         }
-      }
-    }).catch(() => {});
+      });
+    } else {
+      // Fallback: Fetch synchronized data from cloud (Google Sheets) if configured
+      fetchPortalDataFromCloud().then((res) => {
+        if (res.success && res.data) {
+          if (res.data.apps && res.data.apps.length > 0) {
+            setApps(res.data.apps);
+            saveStoredApps(res.data.apps);
+          }
+          if (res.data.courses && res.data.courses.length > 0) {
+            setCourses(res.data.courses);
+            saveStoredCourses(res.data.courses);
+          }
+          if (res.data.events && res.data.events.length > 0) {
+            setEvents(res.data.events);
+            saveStoredEvents(res.data.events);
+          }
+          if (res.data.docs && res.data.docs.length > 0) {
+            setDocs(res.data.docs);
+            saveStoredDocuments(res.data.docs);
+          }
+          if (res.data.bannerAlert) {
+            setBannerAlert(res.data.bannerAlert);
+            saveStoredBannerAlert(res.data.bannerAlert);
+          }
+        }
+      }).catch(() => {});
+    }
 
-    // Listen for storage changes across tabs
+    // 3. Listen for storage changes across tabs
     const handleStorageChange = () => {
       setApps(getStoredApps());
       setCourses(getStoredCourses());
@@ -96,7 +124,10 @@ export default function Home() {
     };
 
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      if (unsubscribeFirestore) unsubscribeFirestore();
+    };
   }, []);
 
   return (

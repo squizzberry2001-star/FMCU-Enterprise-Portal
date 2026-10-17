@@ -36,6 +36,24 @@ import {
   syncAllToCloud, 
   uploadFileToGoogleDrive 
 } from "@/lib/cloudSync";
+import {
+  getFirebaseConfig,
+  saveFirebaseConfig,
+  isFirebaseConfigured,
+  testFirestoreConnection,
+  syncAllToFirestore,
+  fetchAllFromFirestore,
+  saveAppToFirestore,
+  deleteAppFromFirestore,
+  saveCourseToFirestore,
+  deleteCourseFromFirestore,
+  saveEventToFirestore,
+  deleteEventFromFirestore,
+  saveDocToFirestore,
+  deleteDocFromFirestore,
+  saveBannerToFirestore,
+  FirebaseConfigParams
+} from "@/lib/firebase";
 import { 
   Lock, 
   KeyRound, 
@@ -63,7 +81,8 @@ import {
   Database,
   Copy,
   ImageIcon,
-  Download
+  Download,
+  Flame
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -134,6 +153,21 @@ export default function AdminPage() {
   } | null>(null);
   const [copiedUrlType, setCopiedUrlType] = useState<string | null>(null);
 
+  // Firebase Google Console States (Text Plain Database)
+  const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfigParams>({
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: "",
+  });
+  const [rawFirebaseJson, setRawFirebaseJson] = useState("");
+  const [isTestingFirestore, setIsTestingFirestore] = useState(false);
+  const [isSyncingFirestore, setIsSyncingFirestore] = useState(false);
+  const [firestoreStatus, setFirestoreStatus] = useState<"connected" | "disconnected" | "testing" | "idle">("idle");
+  const [firestoreMessage, setFirestoreMessage] = useState<string | null>(null);
+
   // Load Data on Mount
   useEffect(() => {
     // Check if session has admin unlocked
@@ -148,7 +182,37 @@ export default function AdminPage() {
     setGasUrl(storedUrl);
     setFolderId(storedFolder);
     setLastSync(storedLastSync);
-    if (storedUrl) {
+
+    // Load Firebase Google Console Config
+    const fbConf = getFirebaseConfig();
+    setFirebaseConfig(fbConf);
+    if (isFirebaseConfigured()) {
+      setFirestoreStatus("connected");
+      fetchAllFromFirestore().then((res) => {
+        if (res.success && res.data) {
+          if (res.data.apps && res.data.apps.length > 0) {
+            setApps(res.data.apps);
+            saveStoredApps(res.data.apps);
+          }
+          if (res.data.courses && res.data.courses.length > 0) {
+            setCourses(res.data.courses);
+            saveStoredCourses(res.data.courses);
+          }
+          if (res.data.events && res.data.events.length > 0) {
+            setEvents(res.data.events);
+            saveStoredEvents(res.data.events);
+          }
+          if (res.data.docs && res.data.docs.length > 0) {
+            setDocs(res.data.docs);
+            saveStoredDocuments(res.data.docs);
+          }
+          if (res.data.bannerAlert) {
+            setBannerAlert(res.data.bannerAlert);
+            saveStoredBannerAlert(res.data.bannerAlert);
+          }
+        }
+      }).catch(() => {});
+    } else if (storedUrl) {
       setCloudStatus("connected");
       fetchPortalDataFromCloud(storedUrl).then((res) => {
         if (res.success && res.data) {
@@ -191,7 +255,7 @@ export default function AdminPage() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Background Cloud Sync
+  // Background Cloud Sync (Google Console Firestore + Google Sheets)
   const triggerBackgroundCloudSync = (
     updatedApps = apps,
     updatedCourses = courses,
@@ -199,6 +263,20 @@ export default function AdminPage() {
     updatedDocs = docs,
     updatedBanner = bannerAlert
   ) => {
+    // 1. Google Console Firestore (Text Plain Database)
+    if (isFirebaseConfigured()) {
+      syncAllToFirestore({
+        apps: updatedApps,
+        courses: updatedCourses,
+        events: updatedEvents,
+        docs: updatedDocs,
+        bannerAlert: updatedBanner
+      }).then(() => {
+        setFirestoreStatus("connected");
+      }).catch((err) => console.warn("Firestore sync warning:", err));
+    }
+
+    // 2. Google Sheets fallback
     if (getGasApiUrl()) {
       syncAllToCloud({
         apps: updatedApps,
@@ -938,7 +1016,239 @@ export default function AdminPage() {
         {activeTab === "settings" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
-            {/* Google Apps Script & Google Drive Integration Card */}
+            {/* 1. GOOGLE CONSOLE FIRESTORE (TEXT PLAIN & REALTIME SYNC) */}
+            <div className="md:col-span-2 bg-gradient-to-br from-slate-800/90 via-slate-800/80 to-amber-950/20 border border-amber-900/40 rounded-xl p-5 space-y-4 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center">
+                    <Flame className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>1. Google Console Firestore (Database Text Plain & Real-Time Sync)</span>
+                      {firestoreStatus === "connected" ? (
+                        <span className="text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Terhubung Real-Time
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold bg-amber-950 text-amber-400 border border-amber-800 px-2 py-0.5 rounded-full">
+                          ● Belum Terkonfigurasi
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Seluruh data teks (link sistem, modul pelatihan, jadwal, metadata SOP, dan banner) disimpan di Google Cloud / Firebase Console. Perubahan otomatis sinkron ke HP & laptop karyawan secara instan.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Paste Snippet */}
+              <div className="p-3 bg-slate-900/80 border border-slate-700/80 rounded-xl space-y-2">
+                <label className="block text-slate-300 text-xs font-semibold">
+                  Tempel Konfigurasi Firebase dari Google Console (Auto-Detect)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder={`Tempelkan potongan kode dari Firebase Console di sini, contoh:
+const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  projectId: "fmcu-portal",
+  ...
+};`}
+                  value={rawFirebaseJson}
+                  onChange={(e) => {
+                    const text = e.target.value;
+                    setRawFirebaseJson(text);
+                    // Extract config values using regex
+                    const extract = (key: string) => {
+                      const regex = new RegExp(`['"]?${key}['"]?\\s*:\\s*['"]([^'"]+)['"]`);
+                      const match = text.match(regex);
+                      return match ? match[1] : "";
+                    };
+                    const apiKey = extract("apiKey");
+                    const projectId = extract("projectId");
+                    const authDomain = extract("authDomain");
+                    const storageBucket = extract("storageBucket");
+                    const messagingSenderId = extract("messagingSenderId");
+                    const appId = extract("appId");
+
+                    if (projectId || apiKey) {
+                      const updated: FirebaseConfigParams = {
+                        apiKey: apiKey || firebaseConfig.apiKey,
+                        authDomain: authDomain || firebaseConfig.authDomain,
+                        projectId: projectId || firebaseConfig.projectId,
+                        storageBucket: storageBucket || firebaseConfig.storageBucket,
+                        messagingSenderId: messagingSenderId || firebaseConfig.messagingSenderId,
+                        appId: appId || firebaseConfig.appId,
+                      };
+                      setFirebaseConfig(updated);
+                      saveFirebaseConfig(updated);
+                      showToast("Konfigurasi Firebase berhasil diekstrak dan disimpan!");
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:ring-2 focus:ring-amber-500"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Cukup salin dan tempel blok <code>const firebaseConfig = &#123; ... &#125;;</code> dari Firebase Console, sistem akan otomatis membaca kuncinya.
+                </p>
+              </div>
+
+              {/* Manual Config Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-slate-400 mb-1">Project ID</label>
+                  <input
+                    type="text"
+                    placeholder="fmcu-enterprise-portal"
+                    value={firebaseConfig.projectId}
+                    onChange={(e) => {
+                      const updated = { ...firebaseConfig, projectId: e.target.value };
+                      setFirebaseConfig(updated);
+                      saveFirebaseConfig(updated);
+                    }}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">API Key</label>
+                  <input
+                    type="password"
+                    placeholder="AIzaSy..."
+                    value={firebaseConfig.apiKey}
+                    onChange={(e) => {
+                      const updated = { ...firebaseConfig, apiKey: e.target.value };
+                      setFirebaseConfig(updated);
+                      saveFirebaseConfig(updated);
+                    }}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">Auth Domain (Opsional)</label>
+                  <input
+                    type="text"
+                    placeholder="fmcu-portal.firebaseapp.com"
+                    value={firebaseConfig.authDomain}
+                    onChange={(e) => {
+                      const updated = { ...firebaseConfig, authDomain: e.target.value };
+                      setFirebaseConfig(updated);
+                      saveFirebaseConfig(updated);
+                    }}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">App ID (Opsional)</label>
+                  <input
+                    type="text"
+                    placeholder="1:123456789:web:abcdef..."
+                    value={firebaseConfig.appId}
+                    onChange={(e) => {
+                      const updated = { ...firebaseConfig, appId: e.target.value };
+                      setFirebaseConfig(updated);
+                      saveFirebaseConfig(updated);
+                    }}
+                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-[11px]"
+                  />
+                </div>
+              </div>
+
+              {firestoreMessage && (
+                <div className={`p-2.5 rounded-lg text-xs font-medium ${
+                  firestoreStatus === "connected" ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800" : "bg-rose-950/80 text-rose-300 border border-rose-800"
+                }`}>
+                  {firestoreMessage}
+                </div>
+              )}
+
+              {/* Action Buttons for Firestore */}
+              <div className="pt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
+                      alert("Harap masukkan Project ID dan API Key Firebase terlebih dahulu!");
+                      return;
+                    }
+                    saveFirebaseConfig(firebaseConfig);
+                    setIsTestingFirestore(true);
+                    setFirestoreMessage(null);
+                    const res = await testFirestoreConnection(firebaseConfig);
+                    setIsTestingFirestore(false);
+                    if (res.success) {
+                      setFirestoreStatus("connected");
+                      setFirestoreMessage("✓ " + res.message);
+                      showToast("Koneksi Google Console Firestore berhasil!");
+                    } else {
+                      setFirestoreStatus("disconnected");
+                      setFirestoreMessage("✕ " + res.message);
+                    }
+                  }}
+                  disabled={isTestingFirestore}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTestingFirestore ? "animate-spin" : ""}`} />
+                  <span>{isTestingFirestore ? "Menghubungi Firestore..." : "Tes Koneksi Google Console"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
+                      alert("Masukkan konfigurasi Firebase terlebih dahulu!");
+                      return;
+                    }
+                    saveFirebaseConfig(firebaseConfig);
+                    setIsSyncingFirestore(true);
+                    const res = await syncAllToFirestore({
+                      apps,
+                      courses,
+                      events,
+                      docs,
+                      bannerAlert
+                    });
+                    setIsSyncingFirestore(false);
+                    if (res.success) {
+                      setFirestoreStatus("connected");
+                      showToast("Semua data teks berhasil diunggah ke Google Console Firestore!");
+                    } else {
+                      alert("Gagal sinkronisasi: " + res.error);
+                    }
+                  }}
+                  disabled={isSyncingFirestore}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+                >
+                  <Database className={`w-3.5 h-3.5 ${isSyncingFirestore ? "animate-spin" : ""}`} />
+                  <span>{isSyncingFirestore ? "Mengirim ke Firestore..." : "Kirim Semua Data Teks ke Google Console"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSyncingFirestore(true);
+                    const res = await fetchAllFromFirestore();
+                    setIsSyncingFirestore(false);
+                    if (res.success && res.data) {
+                      if (res.data.apps) { setApps(res.data.apps); saveStoredApps(res.data.apps); }
+                      if (res.data.courses) { setCourses(res.data.courses); saveStoredCourses(res.data.courses); }
+                      if (res.data.events) { setEvents(res.data.events); saveStoredEvents(res.data.events); }
+                      if (res.data.docs) { setDocs(res.data.docs); saveStoredDocuments(res.data.docs); }
+                      if (res.data.bannerAlert) { setBannerAlert(res.data.bannerAlert); saveStoredBannerAlert(res.data.bannerAlert); }
+                      showToast("Data terbaru berhasil dimuat dari Google Console Firestore!");
+                    } else {
+                      alert("Gagal mengambil data dari Firestore: " + res.error);
+                    }
+                  }}
+                  disabled={isSyncingFirestore}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold border border-slate-700 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  <span>Tarik Data dari Google Console</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. GOOGLE DRIVE STORAGE (HEAVY FILES: PDF, DOKUMEN, FOTO, VIDEO) */}
             <div className="md:col-span-2 bg-gradient-to-br from-slate-800/90 to-blue-950/40 border border-blue-900/40 rounded-xl p-5 space-y-4 shadow-md">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
@@ -947,7 +1257,7 @@ export default function AdminPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>Integrasi Cloud Database (Google Sheets & GDrive)</span>
+                      <span>2. Google Drive Storage (Penyimpanan File Berat & Foto via Apps Script)</span>
                       {cloudStatus === "connected" ? (
                         <span className="text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <Check className="w-3 h-3" /> Terhubung
