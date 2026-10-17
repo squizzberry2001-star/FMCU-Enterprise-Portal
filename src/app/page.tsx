@@ -52,17 +52,57 @@ export default function Home() {
   const [events, setEvents] = useState(upcomingEventsData);
   const [docs, setDocs] = useState(documentItemsData);
   const [bannerAlert, setBannerAlert] = useState<BannerAlertConfig>(initialBannerAlert);
+  const [isLiveOnline, setIsLiveOnline] = useState(true);
 
   useEffect(() => {
-    // 1. Load persisted state from local storage (0ms render)
+    // 1. Load initial persisted state from local storage (0ms render)
     setApps(getStoredApps());
     setCourses(getStoredCourses());
     setEvents(getStoredEvents());
     setDocs(getStoredDocuments());
     setBannerAlert(getStoredBannerAlert());
 
-    // 2. Real-time synchronization with Google Console Firestore
+    let isFetching = false;
+    const fetchLatestCloudData = async () => {
+      if (isFetching) return;
+      isFetching = true;
+      try {
+        const res = await fetchPortalDataFromCloud();
+        if (res.success && res.data) {
+          setIsLiveOnline(true);
+          if (res.data.apps && res.data.apps.length > 0) {
+            setApps(res.data.apps);
+            saveStoredApps(res.data.apps);
+          }
+          if (res.data.courses && res.data.courses.length > 0) {
+            setCourses(res.data.courses);
+            saveStoredCourses(res.data.courses);
+          }
+          if (res.data.events && res.data.events.length > 0) {
+            setEvents(res.data.events);
+            saveStoredEvents(res.data.events);
+          }
+          if (res.data.docs && res.data.docs.length > 0) {
+            setDocs(res.data.docs);
+            saveStoredDocuments(res.data.docs);
+          }
+          if (res.data.bannerAlert) {
+            setBannerAlert(res.data.bannerAlert);
+            saveStoredBannerAlert(res.data.bannerAlert);
+          }
+        }
+      } catch (e) {
+        // network glitch, silent retry
+      } finally {
+        isFetching = false;
+      }
+    };
+
+    // 2. Real-time synchronization
     let unsubscribeFirestore: (() => void) | null = null;
+    let pollInterval: NodeJS.Timeout | null = null;
+    let channel: BroadcastChannel | null = null;
+
     if (isFirebaseConfigured()) {
       unsubscribeFirestore = subscribeToPortalData((cloudData) => {
         if (cloudData.apps && cloudData.apps.length > 0) {
@@ -87,34 +127,42 @@ export default function Home() {
         }
       });
     } else {
-      // Fallback: Fetch synchronized data from cloud (Google Sheets) if configured
-      fetchPortalDataFromCloud().then((res) => {
-        if (res.success && res.data) {
-          if (res.data.apps && res.data.apps.length > 0) {
-            setApps(res.data.apps);
-            saveStoredApps(res.data.apps);
-          }
-          if (res.data.courses && res.data.courses.length > 0) {
-            setCourses(res.data.courses);
-            saveStoredCourses(res.data.courses);
-          }
-          if (res.data.events && res.data.events.length > 0) {
-            setEvents(res.data.events);
-            saveStoredEvents(res.data.events);
-          }
-          if (res.data.docs && res.data.docs.length > 0) {
-            setDocs(res.data.docs);
-            saveStoredDocuments(res.data.docs);
-          }
-          if (res.data.bannerAlert) {
-            setBannerAlert(res.data.bannerAlert);
-            saveStoredBannerAlert(res.data.bannerAlert);
-          }
-        }
-      }).catch(() => {});
+      // Immediate fetch on mount
+      fetchLatestCloudData();
+
+      // Continuous Real-time polling every 4 seconds so changes from admin appear instantly across all devices
+      pollInterval = setInterval(fetchLatestCloudData, 4000);
     }
 
-    // 3. Listen for storage changes across tabs
+    // Instant refresh on window focus & tab activation
+    const handleFocus = () => fetchLatestCloudData();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchLatestCloudData();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // 3. BroadcastChannel for 0ms cross-tab sync within the same browser
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      try {
+        channel = new BroadcastChannel("fmcu_portal_realtime");
+        channel.onmessage = (event) => {
+          if (event.data?.type === "PORTAL_DATA_UPDATED") {
+            setApps(getStoredApps());
+            setCourses(getStoredCourses());
+            setEvents(getStoredEvents());
+            setDocs(getStoredDocuments());
+            setBannerAlert(getStoredBannerAlert());
+            fetchLatestCloudData();
+          }
+        };
+      } catch (e) {}
+    }
+
+    // 4. Listen for storage changes across tabs
     const handleStorageChange = () => {
       setApps(getStoredApps());
       setCourses(getStoredCourses());
@@ -126,6 +174,10 @@ export default function Home() {
     window.addEventListener("storage", handleStorageChange);
     return () => {
       window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (pollInterval) clearInterval(pollInterval);
+      if (channel) channel.close();
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
   }, []);
@@ -155,21 +207,28 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Understated Minimal Metrics */}
-          <div className="flex items-center gap-5 text-xs text-slate-500 bg-white border border-slate-200/80 px-4 py-2 rounded-xl self-start sm:self-auto shadow-2xs">
-            <div>
-              <span className="text-slate-400">Kepatuhan:</span>{" "}
-              <strong className="text-slate-800 font-semibold">{userProfile.complianceRate}%</strong>
+          {/* Understated Minimal Metrics & Live Status */}
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Online • Realtime Cloud</span>
             </div>
-            <span className="text-slate-200">•</span>
-            <div>
-              <span className="text-slate-400">Jam Belajar:</span>{" "}
-              <strong className="text-blue-600 font-semibold">{userProfile.learningHoursThisYear}h</strong>
-            </div>
-            <span className="text-slate-200">•</span>
-            <div>
-              <span className="text-slate-400">Sertifikat:</span>{" "}
-              <strong className="text-slate-800 font-semibold">{userProfile.certificatesEarned}</strong>
+
+            <div className="flex items-center gap-5 text-xs text-slate-500 bg-white border border-slate-200/80 px-4 py-2 rounded-xl shadow-2xs">
+              <div>
+                <span className="text-slate-400">Kepatuhan:</span>{" "}
+                <strong className="text-slate-800 font-semibold">{userProfile.complianceRate}%</strong>
+              </div>
+              <span className="text-slate-200">•</span>
+              <div>
+                <span className="text-slate-400">Jam Belajar:</span>{" "}
+                <strong className="text-blue-600 font-semibold">{userProfile.learningHoursThisYear}h</strong>
+              </div>
+              <span className="text-slate-200">•</span>
+              <div>
+                <span className="text-slate-400">Sertifikat:</span>{" "}
+                <strong className="text-slate-800 font-semibold">{userProfile.certificatesEarned}</strong>
+              </div>
             </div>
           </div>
         </div>

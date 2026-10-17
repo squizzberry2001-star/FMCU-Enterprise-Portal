@@ -72,7 +72,20 @@ export async function testGasConnection(customUrl?: string): Promise<{ success: 
 }
 
 /**
- * Fetch latest portal data from Google Sheets
+ * Broadcast update event across open browser tabs for 0ms realtime sync
+ */
+export function broadcastPortalUpdate() {
+  if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+    try {
+      const channel = new BroadcastChannel("fmcu_portal_realtime");
+      channel.postMessage({ type: "PORTAL_DATA_UPDATED", timestamp: Date.now() });
+      channel.close();
+    } catch (e) {}
+  }
+}
+
+/**
+ * Fetch latest portal data from Google Sheets (Real-time with Cache-Busting)
  */
 export async function fetchPortalDataFromCloud(customUrl?: string): Promise<{
   success: boolean;
@@ -91,11 +104,32 @@ export async function fetchPortalDataFromCloud(customUrl?: string): Promise<{
   }
 
   try {
-    const res = await fetch(`/api/portal-data?action=getAll&gasUrl=${encodeURIComponent(url)}`, {
+    const cacheBuster = Date.now();
+    const res = await fetch(`/api/portal-data?action=getAll&gasUrl=${encodeURIComponent(url)}&_t=${cacheBuster}`, {
       cache: "no-store",
+      headers: {
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache"
+      }
     });
     const result = await res.json();
     if (result.success && result.data) {
+      // Re-hydrate any slideUrl & description from _coursesData if tb_courses didn't return them
+      const extraCourses = (result.data.bannerAlert as any)?._coursesData || [];
+      const extraMap = new Map<string, any>(extraCourses.map((ec: any) => [ec.id, ec]));
+
+      if (result.data.courses && Array.isArray(result.data.courses)) {
+        result.data.courses = result.data.courses.map((c: TrainingCourse) => {
+          const extra = extraMap.get(c.id);
+          return {
+            ...c,
+            slideUrl: c.slideUrl || extra?.slideUrl || "",
+            description: c.description || extra?.description || "",
+            estimatedHours: c.estimatedHours || extra?.estimatedHours || ""
+          };
+        });
+      }
+
       setLastSyncTime(new Date().toLocaleTimeString("id-ID"));
       return { success: true, data: result.data };
     }
@@ -106,7 +140,7 @@ export async function fetchPortalDataFromCloud(customUrl?: string): Promise<{
 }
 
 /**
- * Sync entire dataset to Google Sheets
+ * Sync entire dataset to Google Sheets (Pushes immediately and broadcasts)
  */
 export async function syncAllToCloud(payload: {
   apps: OneGateApp[];
@@ -121,13 +155,26 @@ export async function syncAllToCloud(payload: {
   }
 
   try {
+    // Pack courses metadata into bannerAlert as a fail-safe backup for Google Sheets
+    const bannerWithMeta = {
+      ...payload.bannerAlert,
+      _coursesData: payload.courses.map((c) => ({
+        id: c.id,
+        slideUrl: c.slideUrl || "",
+        description: c.description || "",
+        title: c.title,
+        category: c.category,
+        estimatedHours: c.estimatedHours || ""
+      }))
+    };
+
     const body = {
       action: "syncAll",
       apps: payload.apps,
       courses: payload.courses,
       events: payload.events,
       docs: payload.docs,
-      bannerAlert: payload.bannerAlert,
+      bannerAlert: bannerWithMeta,
     };
 
     const res = await fetch(`/api/portal-data?gasUrl=${encodeURIComponent(url)}`, {
@@ -139,6 +186,7 @@ export async function syncAllToCloud(payload: {
     const result = await res.json();
     if (result.success) {
       setLastSyncTime(new Date().toLocaleTimeString("id-ID"));
+      broadcastPortalUpdate();
       return { success: true, message: result.message || "Data berhasil disinkronkan ke Google Sheets!" };
     }
     return { success: false, error: result.error || "Gagal menyimpan ke Google Sheets." };
