@@ -102,6 +102,12 @@ function doGet(e) {
       return responseJSON({ success: true, data: data });
     }
 
+    if (action === "getGoogleCalendar") {
+      const calId = (e && e.parameter && e.parameter.calendarId) || "primary";
+      const result = fetchGoogleCalendarEvents(calId);
+      return responseJSON(result);
+    }
+
     return responseJSON({ success: false, message: "Action tidak dikenal: " + action });
   } catch (err) {
     return responseJSON({ success: false, error: err.toString() });
@@ -248,6 +254,14 @@ function doPost(e) {
     if (action === "saveBanner") {
       saveSettingValue("banner_alert", JSON.stringify(payload.data));
       return responseJSON({ success: true, message: "Banner tersimpan!" });
+    }
+    if (action === "syncGoogleCalendar") {
+      const calId = payload.calendarId || "primary";
+      const calRes = fetchGoogleCalendarEvents(calId);
+      if (calRes.success && calRes.events && calRes.events.length > 0) {
+        saveTableData(SHEET_NAMES.EVENTS, calRes.events);
+      }
+      return responseJSON(calRes);
     }
 
     return responseJSON({ success: false, message: "Action tidak dikenal: " + action });
@@ -417,4 +431,95 @@ function saveSettingValue(key, value) {
 function responseJSON(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Ambil jadwal event langsung dari Google Calendar (Native CalendarApp)
+ */
+function fetchGoogleCalendarEvents(calendarId) {
+  try {
+    const id = calendarId || "primary";
+    let cal;
+    if (id === "primary") {
+      cal = CalendarApp.getDefaultCalendar();
+    } else {
+      cal = CalendarApp.getCalendarById(id);
+    }
+
+    if (!cal) {
+      return { 
+        success: false, 
+        error: "Google Calendar dengan ID '" + id + "' tidak ditemukan. Pastikan Calendar ID benar atau akun Google memiliki izin akses kalender tersebut." 
+      };
+    }
+
+    const now = new Date();
+    // Ambil event dari 7 hari lalu hingga 90 hari mendatang
+    const startTime = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+    const endTime = new Date(now.getTime() + (90 * 24 * 60 * 60 * 1000));
+    
+    const events = cal.getEvents(startTime, endTime);
+    const parsedEvents = [];
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      const start = ev.getStartTime();
+      const end = ev.getEndTime();
+      
+      const day = start.getDate();
+      const month = MONTHS[start.getMonth()];
+      const year = start.getFullYear();
+      const dateStr = day + " " + month + " " + year;
+
+      const pad = function(n) { return n < 10 ? '0' + n : n; };
+      const timeStr = pad(start.getHours()) + ":" + pad(start.getMinutes()) + " - " + 
+                      pad(end.getHours()) + ":" + pad(end.getMinutes()) + " WIB";
+
+      const loc = ev.getLocation() || "Google Meet";
+      const desc = ev.getDescription() || "";
+
+      let meetingUrl = "";
+      const urlMatch = (loc + " " + desc).match(/https:\/\/(meet\.google\.com|teams\.microsoft\.com|zoom\.us\/j)\/[^\s"']+/i);
+      if (urlMatch) {
+        meetingUrl = urlMatch[0];
+      }
+
+      const isOnline = /meet|zoom|teams|online|webinar/i.test(loc + " " + desc);
+
+      let type = "Webinar";
+      const combined = (ev.getTitle() + " " + desc).toLowerCase();
+      if (combined.indexOf("workshop") !== -1) type = "Workshop Offline";
+      else if (combined.indexOf("sertifikasi") !== -1 || combined.indexOf("exam") !== -1 || combined.indexOf("ujian") !== -1) type = "Certification Exam";
+      else if (combined.indexOf("sharing") !== -1 || combined.indexOf("talk") !== -1) type = "Sharing Session";
+
+      parsedEvents.push({
+        id: "gcal-" + ev.getId(),
+        title: ev.getTitle(),
+        type: type,
+        trainer: ev.getCreators().join(", ") || "Trainer FMCU",
+        date: dateStr,
+        time: timeStr,
+        location: loc,
+        isOnline: isOnline,
+        meetingUrl: meetingUrl || (isOnline ? "https://meet.google.com" : ""),
+        registeredCount: 0,
+        maxCapacity: 100,
+        description: desc,
+        googleEventId: ev.getId(),
+        startDateTime: start.toISOString(),
+        endDateTime: end.toISOString()
+      });
+    }
+
+    return {
+      success: true,
+      calendarName: cal.getName(),
+      calendarId: id,
+      count: parsedEvents.length,
+      events: parsedEvents
+    };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
 }

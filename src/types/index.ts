@@ -43,7 +43,7 @@ export interface TrainingCourse {
 export interface CalendarEvent {
   id: string;
   title: string;
-  type: "Webinar" | "Workshop Offline" | "Certification Exam" | "Sharing Session";
+  type: "Webinar" | "Workshop Offline" | "Certification Exam" | "Sharing Session" | string;
   trainer: string;
   date: string;
   time: string;
@@ -52,6 +52,11 @@ export interface CalendarEvent {
   meetingUrl?: string;
   registeredCount: number;
   maxCapacity: number;
+  description?: string;
+  googleEventId?: string;
+  startDateTime?: string;
+  endDateTime?: string;
+  calendarLink?: string;
 }
 
 export interface DocumentItem {

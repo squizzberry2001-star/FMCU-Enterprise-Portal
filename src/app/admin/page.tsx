@@ -34,8 +34,17 @@ import {
   testGasConnection, 
   fetchPortalDataFromCloud, 
   syncAllToCloud, 
-  uploadFileToGoogleDrive 
+  uploadFileToGoogleDrive,
+  syncGoogleCalendarEvents,
+  fetchEventsFromIcalUrl
 } from "@/lib/cloudSync";
+import { 
+  getGoogleCalendarId, 
+  saveGoogleCalendarId, 
+  getGoogleCalendarIcalUrl, 
+  saveGoogleCalendarIcalUrl,
+  generateGoogleCalendarAddUrl
+} from "@/lib/calendarUtils";
 import {
   getFirebaseConfig,
   saveFirebaseConfig,
@@ -61,6 +70,7 @@ import {
   LayoutGrid, 
   BookOpen, 
   Calendar, 
+  CalendarDays,
   FileText, 
   Settings, 
   Plus, 
@@ -174,6 +184,12 @@ export default function AdminPage() {
   const [firestoreStatus, setFirestoreStatus] = useState<"connected" | "disconnected" | "testing" | "idle">("idle");
   const [firestoreMessage, setFirestoreMessage] = useState<string | null>(null);
 
+  // Google Calendar Integration States
+  const [gcalId, setGcalId] = useState<string>("primary");
+  const [gcalIcalUrl, setGcalIcalUrl] = useState<string>("");
+  const [isSyncingGcal, setIsSyncingGcal] = useState(false);
+  const [gcalSyncMessage, setGcalSyncMessage] = useState<string | null>(null);
+
   // Load Data on Mount
   useEffect(() => {
     // Check if session has admin unlocked
@@ -188,6 +204,8 @@ export default function AdminPage() {
     setGasUrl(storedUrl);
     setFolderId(storedFolder);
     setLastSync(storedLastSync);
+    setGcalId(getGoogleCalendarId());
+    setGcalIcalUrl(getGoogleCalendarIcalUrl());
 
     // Load Firebase Google Console Config
     const fbConf = getFirebaseConfig();
@@ -421,7 +439,38 @@ export default function AdminPage() {
     }
   };
 
-  // ==================== EVENT CRUD ====================
+  // ==================== EVENT CRUD & GOOGLE CALENDAR ====================
+  const handleSyncGoogleCalendar = async () => {
+    setIsSyncingGcal(true);
+    setGcalSyncMessage(null);
+    try {
+      saveGoogleCalendarId(gcalId);
+      saveGoogleCalendarIcalUrl(gcalIcalUrl);
+
+      let res: { success: boolean; events?: CalendarEvent[]; error?: string } = { success: false };
+      if (gcalIcalUrl && gcalIcalUrl.trim().length > 0) {
+        res = await fetchEventsFromIcalUrl(gcalIcalUrl.trim());
+      } else {
+        res = await syncGoogleCalendarEvents(gcalId || "primary");
+      }
+
+      if (res.success && res.events && res.events.length > 0) {
+        setEvents(res.events);
+        saveStoredEvents(res.events);
+        triggerBackgroundCloudSync(apps, courses, res.events, docs, bannerAlert);
+        showToast(`Berhasil menyinkronkan ${res.events.length} jadwal dari Google Calendar!`);
+        setGcalSyncMessage(`Tersinkronisasi ${res.events.length} jadwal dari Google Calendar.`);
+      } else {
+        showToast(res.error || "Tidak ada jadwal ditemukan di Google Calendar.");
+        setGcalSyncMessage(res.error || "Gagal menarik data dari Google Calendar.");
+      }
+    } catch (err: any) {
+      showToast("Terjadi kesalahan saat sinkronisasi Google Calendar.");
+    } finally {
+      setIsSyncingGcal(false);
+    }
+  };
+
   const handleSaveEvent = (evtData: Partial<CalendarEvent>) => {
     let updated: CalendarEvent[];
     if (editingEvent) {
@@ -435,11 +484,12 @@ export default function AdminPage() {
         trainer: evtData.trainer || "Trainer Internal FMCU",
         date: evtData.date || "25 Okt 2026",
         time: evtData.time || "09:00 - 12:00 WIB",
-        location: evtData.location || "MS Teams Live Room",
+        location: evtData.location || "Google Meet",
         isOnline: evtData.isOnline ?? true,
-        meetingUrl: evtData.meetingUrl || "https://teams.microsoft.com",
+        meetingUrl: evtData.meetingUrl || "https://meet.google.com",
         registeredCount: 0,
-        maxCapacity: Number(evtData.maxCapacity) || 100
+        maxCapacity: Number(evtData.maxCapacity) || 100,
+        description: evtData.description || "",
       };
       updated = [newEvent, ...events];
       showToast("Jadwal pelatihan baru berhasil ditambahkan!");
@@ -929,61 +979,157 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ==================== TAB 3: EVENTS CRUD ==================== */}
+        {/* ==================== TAB 3: EVENTS CRUD & GOOGLE CALENDAR ==================== */}
         {activeTab === "events" && (
           <div className="space-y-4">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-800/40 border border-slate-800 p-4 rounded-xl">
               <div>
-                <h2 className="text-base font-bold text-white">Jadwal Sesi & Webinar Training Center</h2>
-                <p className="text-xs text-slate-400">Jadwalkan sesi pelatihan daring (Teams/Zoom) atau workshop luring di kantor.</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Google Calendar Ready
+                  </span>
+                  <span className="text-xs text-slate-400">Total: {events.length} Jadwal</span>
+                </div>
+                <h2 className="text-base font-bold text-white">Jadwal Sesi & Integrasi Google Calendar</h2>
+                <p className="text-xs text-slate-400">Tarik event langsung dari Google Calendar atau kelola sesi pelatihan internal secara manual.</p>
               </div>
               <button
                 onClick={() => {
                   setEditingEvent(null);
                   setEventModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all self-start sm:self-auto"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition-all self-start sm:self-auto shrink-0 shadow-sm"
               >
                 <Plus className="w-4 h-4" />
-                <span>Jadwalkan Sesi Baru</span>
+                <span>Tambah Sesi Manual</span>
               </button>
             </div>
 
-            <div className="space-y-3">
-              {events.map((e) => (
-                <div key={e.id} className="bg-slate-800/50 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-semibold bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded">
-                        {e.type}
-                      </span>
-                      <span className="text-xs text-slate-400">{e.date} • {e.time}</span>
-                    </div>
-                    <h3 className="font-semibold text-white text-sm">{e.title}</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Fasilitator: <strong className="text-slate-300">{e.trainer}</strong> | Lokasi: {e.location}
-                    </p>
+            {/* Google Calendar Direct Sync Card */}
+            <div className="bg-slate-900/80 border border-blue-900/40 rounded-xl p-4 sm:p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                    <Calendar className="w-4 h-4" />
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                    <button
-                      onClick={() => {
-                        setEditingEvent(e);
-                        setEventModalOpen(true);
-                      }}
-                      className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors flex items-center gap-1"
-                    >
-                      <Pencil className="w-3 h-3" /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteEvent(e.id)}
-                      className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div>
+                    <h3 className="font-bold text-white text-xs sm:text-sm">Sinkronisasi Otomatis Google Calendar</h3>
+                    <p className="text-[11px] text-slate-400">Hubungkan ID Kalender atau tautan iCal agar jadwal training terisi otomatis ke portal.</p>
                   </div>
                 </div>
-              ))}
+
+                <button
+                  type="button"
+                  onClick={handleSyncGoogleCalendar}
+                  disabled={isSyncingGcal}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-all self-start sm:self-auto shrink-0 shadow-xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGcal ? "animate-spin" : ""}`} />
+                  <span>{isSyncingGcal ? "Menyinkronkan..." : "Tarik dari Google Calendar"}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    Google Calendar ID <span className="text-slate-500">(Default: &quot;primary&quot; atau email kalender)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={gcalId}
+                    onChange={(e) => setGcalId(e.target.value)}
+                    placeholder="primary atau alamat_kalender@group.calendar.google.com"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    Tautan iCal / Feed Publik .ics <span className="text-slate-500">(Opsional / Alternatif)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={gcalIcalUrl}
+                    onChange={(e) => setGcalIcalUrl(e.target.value)}
+                    placeholder="https://calendar.google.com/calendar/ical/.../public/basic.ics"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {gcalSyncMessage && (
+                <div className="text-[11px] text-blue-300 bg-blue-950/40 border border-blue-800/60 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  <span>{gcalSyncMessage}</span>
+                </div>
+              )}
+            </div>
+
+            {/* List of Events */}
+            <div className="space-y-3">
+              {events.map((e) => {
+                const isFromGcal = Boolean(e.googleEventId);
+                const gcalAddLink = generateGoogleCalendarAddUrl(e);
+
+                return (
+                  <div key={e.id} className="bg-slate-800/50 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-slate-700 transition-colors">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-[10px] font-semibold bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded">
+                          {e.type}
+                        </span>
+                        {isFromGcal && (
+                          <span className="text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            Google Calendar
+                          </span>
+                        )}
+                        <span className="text-xs text-slate-400">{e.date} • {e.time}</span>
+                      </div>
+
+                      <h3 className="font-semibold text-white text-sm truncate">{e.title}</h3>
+                      <p className="text-xs text-slate-400">
+                        Fasilitator: <strong className="text-slate-300">{e.trainer}</strong> | Lokasi: <strong className="text-slate-300">{e.location}</strong>
+                      </p>
+
+                      {e.description && (
+                        <p className="text-xs text-slate-500 line-clamp-1 italic">
+                          {e.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                      <a
+                        href={gcalAddLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors flex items-center gap-1"
+                        title="Tes link tambah ke Google Calendar"
+                      >
+                        <ExternalLink className="w-3 h-3 text-blue-400" /> Cal Link
+                      </a>
+                      <button
+                        onClick={() => {
+                          setEditingEvent(e);
+                          setEventModalOpen(true);
+                        }}
+                        className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors flex items-center gap-1"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteEvent(e.id)}
+                        className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -2210,6 +2356,7 @@ const firebaseConfig = {
                   time: (form.elements.namedItem("time") as HTMLInputElement).value,
                   location: (form.elements.namedItem("location") as HTMLInputElement).value,
                   meetingUrl: (form.elements.namedItem("meetingUrl") as HTMLInputElement).value,
+                  description: (form.elements.namedItem("description") as HTMLTextAreaElement)?.value || "",
                   isOnline: (form.elements.namedItem("isOnline") as HTMLInputElement).checked,
                 });
               }}
@@ -2287,6 +2434,17 @@ const firebaseConfig = {
                   name="meetingUrl"
                   defaultValue={editingEvent?.meetingUrl || "https://teams.microsoft.com"}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Deskripsi / Agenda Pelatihan (Opsional)</label>
+                <textarea
+                  name="description"
+                  rows={2}
+                  defaultValue={editingEvent?.description || ""}
+                  placeholder="Ringkasan materi, agenda bahasan, atau instruksi peserta..."
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs placeholder:text-slate-500 resize-none"
                 />
               </div>
 

@@ -1,6 +1,7 @@
 import { OneGateApp, TrainingCourse, CalendarEvent, DocumentItem } from "@/types";
 import { BannerAlertConfig } from "@/lib/storage";
 import defaultCloudConfig from "@/config/cloudConfig.json";
+import { parseIcsCalendarData } from "@/lib/calendarUtils";
 
 const CLOUD_KEYS = {
   GAS_URL: "fmcu_gas_api_url_v1",
@@ -249,6 +250,60 @@ export async function uploadFileToGoogleDrive(params: {
       };
     }
     return { success: false, error: result.error || "Gagal mengunggah file ke Google Drive." };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Fetch events directly from Google Calendar via Apps Script
+ */
+export async function syncGoogleCalendarEvents(calendarId: string = "primary"): Promise<{
+  success: boolean;
+  events?: CalendarEvent[];
+  calendarName?: string;
+  error?: string;
+}> {
+  const url = getGasApiUrl();
+  if (!url) {
+    return { success: false, error: "URL Google Apps Script belum dikonfigurasi." };
+  }
+
+  try {
+    const res = await fetch(`/api/portal-data?action=getGoogleCalendar&calendarId=${encodeURIComponent(calendarId)}&gasUrl=${encodeURIComponent(url)}`, {
+      cache: "no-store",
+      headers: {
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache"
+      }
+    });
+    const result = await res.json();
+    return result;
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Fetch and parse events from public Google Calendar iCal (.ics) URL
+ */
+export async function fetchEventsFromIcalUrl(icalUrl: string): Promise<{
+  success: boolean;
+  events?: CalendarEvent[];
+  error?: string;
+}> {
+  if (!icalUrl) return { success: false, error: "URL iCal belum diisi." };
+
+  try {
+    const res = await fetch(`/api/portal-data?action=fetchIcal&url=${encodeURIComponent(icalUrl)}`, {
+      cache: "no-store",
+    });
+    const result = await res.json();
+    if (result.success && result.icsContent) {
+      const parsed = parseIcsCalendarData(result.icsContent);
+      return { success: true, events: parsed };
+    }
+    return { success: false, error: result.error || "Gagal membaca format iCal." };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

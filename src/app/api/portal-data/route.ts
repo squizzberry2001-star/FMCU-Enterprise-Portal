@@ -9,6 +9,24 @@ export async function GET(request: NextRequest) {
   const gasUrl = searchParams.get("gasUrl") || process.env.NEXT_PUBLIC_GAS_API_URL || defaultCloudConfig.gasApiUrl;
   const action = searchParams.get("action") || "getAll";
 
+  if (action === "fetchIcal") {
+    const icalUrl = searchParams.get("url");
+    if (!icalUrl) {
+      return NextResponse.json({ success: false, error: "URL iCal belum diisi." }, { status: 400 });
+    }
+    try {
+      const icsRes = await fetch(icalUrl, { cache: "no-store" });
+      const text = await icsRes.text();
+      return NextResponse.json({ success: true, icsContent: text }, {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        }
+      });
+    } catch (e: any) {
+      return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+    }
+  }
+
   if (!gasUrl) {
     return NextResponse.json(
       { success: false, message: "GAS API URL belum dikonfigurasi." },
@@ -18,7 +36,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const cacheBuster = `_t=${Date.now()}`;
-    const targetUrl = `${gasUrl}?action=${encodeURIComponent(action)}&${cacheBuster}`;
+    const calendarId = searchParams.get("calendarId") || "";
+    const targetUrl = `${gasUrl}?action=${encodeURIComponent(action)}${calendarId ? `&calendarId=${encodeURIComponent(calendarId)}` : ""}&${cacheBuster}`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: {
