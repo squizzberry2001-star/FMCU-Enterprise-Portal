@@ -54,6 +54,37 @@ export default function Home() {
   const [bannerAlert, setBannerAlert] = useState<BannerAlertConfig>(initialBannerAlert);
   const [isLiveOnline, setIsLiveOnline] = useState(true);
 
+  const fetchLatestCloudData = React.useCallback(async () => {
+    try {
+      const res = await fetchPortalDataFromCloud();
+      if (res.success && res.data) {
+        setIsLiveOnline(true);
+        if (res.data.apps && res.data.apps.length > 0) {
+          setApps(res.data.apps);
+          saveStoredApps(res.data.apps);
+        }
+        if (res.data.courses && res.data.courses.length > 0) {
+          setCourses(res.data.courses);
+          saveStoredCourses(res.data.courses);
+        }
+        if (res.data.events && res.data.events.length > 0) {
+          setEvents(res.data.events);
+          saveStoredEvents(res.data.events);
+        }
+        if (res.data.docs && res.data.docs.length > 0) {
+          setDocs(res.data.docs);
+          saveStoredDocuments(res.data.docs);
+        }
+        if (res.data.bannerAlert) {
+          setBannerAlert(res.data.bannerAlert);
+          saveStoredBannerAlert(res.data.bannerAlert);
+        }
+      }
+    } catch (e) {
+      // network glitch, silent retry
+    }
+  }, []);
+
   useEffect(() => {
     // 1. Load initial persisted state from local storage (0ms render)
     setApps(getStoredApps());
@@ -61,42 +92,6 @@ export default function Home() {
     setEvents(getStoredEvents());
     setDocs(getStoredDocuments());
     setBannerAlert(getStoredBannerAlert());
-
-    let isFetching = false;
-    const fetchLatestCloudData = async () => {
-      if (isFetching) return;
-      isFetching = true;
-      try {
-        const res = await fetchPortalDataFromCloud();
-        if (res.success && res.data) {
-          setIsLiveOnline(true);
-          if (res.data.apps && res.data.apps.length > 0) {
-            setApps(res.data.apps);
-            saveStoredApps(res.data.apps);
-          }
-          if (res.data.courses && res.data.courses.length > 0) {
-            setCourses(res.data.courses);
-            saveStoredCourses(res.data.courses);
-          }
-          if (res.data.events && res.data.events.length > 0) {
-            setEvents(res.data.events);
-            saveStoredEvents(res.data.events);
-          }
-          if (res.data.docs && res.data.docs.length > 0) {
-            setDocs(res.data.docs);
-            saveStoredDocuments(res.data.docs);
-          }
-          if (res.data.bannerAlert) {
-            setBannerAlert(res.data.bannerAlert);
-            saveStoredBannerAlert(res.data.bannerAlert);
-          }
-        }
-      } catch (e) {
-        // network glitch, silent retry
-      } finally {
-        isFetching = false;
-      }
-    };
 
     // 2. Real-time synchronization
     let unsubscribeFirestore: (() => void) | null = null;
@@ -295,7 +290,7 @@ export default function Home() {
           )}
 
           {activeTab === "calendar" && (
-            <TrainingCalendar events={events} embedUrl={bannerAlert.googleCalendarEmbedUrl} />
+            <TrainingCalendar events={events} embedUrl={bannerAlert.googleCalendarEmbedUrl} onRefresh={fetchLatestCloudData} />
           )}
 
           {activeTab === "docs" && (

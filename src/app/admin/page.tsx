@@ -25,6 +25,7 @@ import {
   BannerAlertConfig,
   DEFAULT_ADMIN_PIN
 } from "@/lib/storage";
+import { upcomingEventsData } from "@/data/portalData";
 import { 
   getGasApiUrl, 
   saveGasApiUrl, 
@@ -194,11 +195,12 @@ export default function AdminPage() {
   const [firestoreMessage, setFirestoreMessage] = useState<string | null>(null);
 
   // Google Calendar Integration States
-  const [gcalId, setGcalId] = useState<string>("primary");
+  const [gcalId, setGcalId] = useState<string>("all");
   const [gcalIcalUrl, setGcalIcalUrl] = useState<string>("");
   const [gcalEmbedUrl, setGcalEmbedUrl] = useState<string>("");
   const [isSyncingGcal, setIsSyncingGcal] = useState(false);
   const [gcalSyncMessage, setGcalSyncMessage] = useState<string | null>(null);
+  const [showGcalAuthModal, setShowGcalAuthModal] = useState<boolean>(false);
 
   // Google Drive Ingestion & Classification States
   const [driveClassifyFolderId, setDriveClassifyFolderId] = useState<string>("1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx");
@@ -493,12 +495,13 @@ export default function AdminPage() {
     }
   };
 
-  const handleSyncByCalendarId = async () => {
+  const handleSyncByCalendarId = async (customId?: string) => {
     setIsSyncingGcal(true);
     setGcalSyncMessage(null);
     try {
-      saveGoogleCalendarId(gcalId);
-      const res = await syncGoogleCalendarEvents(gcalId || "primary");
+      const targetId = typeof customId === "string" ? customId : (gcalId || "all");
+      saveGoogleCalendarId(targetId);
+      const res = await syncGoogleCalendarEvents(targetId);
       if (res.success && res.events && res.events.length > 0) {
         setEvents(res.events);
         saveStoredEvents(res.events);
@@ -507,12 +510,35 @@ export default function AdminPage() {
         setGcalSyncMessage(`✓ Berhasil menarik ${res.events.length} jadwal dari Google Calendar.`);
       } else {
         const errMsg = res.error || (res as any).message || "Tidak ada jadwal ditemukan atau Google Apps Script belum diperbarui.";
+        if (
+          errMsg.includes("permission") || 
+          errMsg.includes("auth/calendar") || 
+          errMsg.includes("does not have permission")
+        ) {
+          setShowGcalAuthModal(true);
+        }
         showToast(errMsg);
         setGcalSyncMessage(`✕ ${errMsg}`);
       }
     } catch (err: any) {
       showToast("Terjadi kesalahan saat sinkronisasi Google Calendar.");
       setGcalSyncMessage(`✕ Error: ${err.message}`);
+    } finally {
+      setIsSyncingGcal(false);
+    }
+  };
+
+  const handleLoadOctoberFmcuEvents = async () => {
+    setIsSyncingGcal(true);
+    setGcalSyncMessage(null);
+    try {
+      setEvents(upcomingEventsData);
+      saveStoredEvents(upcomingEventsData);
+      triggerBackgroundCloudSync(apps, courses, upcomingEventsData, docs, bannerAlert);
+      showToast(`Berhasil memuat ${upcomingEventsData.length} agenda kalender FMCU ke portal & database!`);
+      setGcalSyncMessage(`✓ Berhasil memuat ${upcomingEventsData.length} agenda kalender FMCU (Oktober 2026).`);
+    } catch (err: any) {
+      showToast("Gagal memuat agenda: " + err.message);
     } finally {
       setIsSyncingGcal(false);
     }
@@ -1168,35 +1194,74 @@ export default function AdminPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 {/* Method 1: Calendar ID via Google Apps Script */}
-                <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5 flex flex-col justify-between">
-                  <div className="space-y-1.5">
+                <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-white">Metode 1: Google Calendar ID</span>
-                      <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-medium">Google Apps Script</span>
+                      <span className="font-semibold text-white">Metode 1: Google Calendar (Apps Script)</span>
+                      <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-medium">Internal API</span>
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Menggunakan CalendarApp internal. Kalender <strong className="text-slate-300">tidak perlu publik</strong> jika Apps Script dibuat di akun yang sama.
+                      Menarik seluruh jadwal langsung dari Google Calendar via Apps Script. Kalender <strong className="text-slate-300">tidak perlu publik</strong>.
                     </p>
+
+                    <div className="p-2.5 bg-blue-950/40 border border-blue-800/50 rounded-lg space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-blue-300 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-amber-400" /> Tarik Semua Kalender Sekaligus:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowGcalAuthModal(true)}
+                          className="text-[10px] text-blue-400 hover:underline"
+                        >
+                          Panduan Izin 1x
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSyncByCalendarId("all")}
+                        disabled={isSyncingGcal}
+                        className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 shadow-xs"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGcal ? "animate-spin" : ""}`} />
+                        <span>⚡ Tarik SEMUA Agenda Google Calendar (All)</span>
+                      </button>
+                    </div>
+
                     <div>
-                      <label className="block text-[11px] text-slate-400 mb-1">Calendar ID / Email:</label>
-                      <input
-                        type="text"
-                        value={gcalId}
-                        onChange={(e) => setGcalId(e.target.value)}
-                        placeholder="regional.bestie@familymartindonesia.com"
-                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
-                      />
+                      <label className="block text-[11px] text-slate-400 mb-1">Atau masukkan Calendar ID tertentu (Opsional):</label>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={gcalId}
+                          onChange={(e) => setGcalId(e.target.value)}
+                          placeholder="c_87fe... atau all"
+                          className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white font-mono text-[11px] placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSyncByCalendarId(gcalId)}
+                          disabled={isSyncingGcal}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition-colors disabled:opacity-50"
+                        >
+                          Tarik ID
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSyncByCalendarId}
-                    disabled={isSyncingGcal}
-                    className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 hover:text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isSyncingGcal ? "animate-spin" : ""}`} />
-                    <span>Tarik via Calendar ID (Apps Script)</span>
-                  </button>
+
+                  <div className="pt-2 border-t border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={handleLoadOctoberFmcuEvents}
+                      disabled={isSyncingGcal}
+                      className="w-full py-1.5 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800/50 text-emerald-300 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      title="Memuat 29 agenda sesuai foto Google Calendar FMCU ke database portal"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>✨ Muat Ulang 29 Agenda FMCU (Oktober 2026)</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Method 2: Public iCal Feed (.ics) */}
@@ -3122,6 +3187,112 @@ const firebaseConfig = {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL: GOOGLE CALENDAR AUTH GUIDE ==================== */}
+      {showGcalAuthModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-lg w-full p-6 text-slate-200 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Otorisasi Izin Google Calendar</h3>
+                  <p className="text-xs text-slate-400">Langkah 1x untuk menghubungkan kalender ke portal FMCU</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGcalAuthModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-xs text-amber-300 leading-relaxed">
+              <strong>Mengapa ini diperlukan?</strong> Karena Google Apps Script mengakses data kalender internal akun Anda, Google mewajibkan pemilik skrip memberikan izin akses 1x di editor Apps Script agar API web dapat membaca seluruh jadwal otomatis.
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl">
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white font-black flex items-center justify-center shrink-0 text-xs">1</div>
+                <div>
+                  <strong className="text-white block mb-0.5">Buka Editor Google Apps Script</strong>
+                  <span className="text-slate-400">Buka spreadsheet database FMCU Anda, lalu klik menu <strong className="text-slate-300">Ekstensi (Extensions) &rarr; Apps Script</strong>.</span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl">
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white font-black flex items-center justify-center shrink-0 text-xs">2</div>
+                <div>
+                  <strong className="text-white block mb-0.5">Pilih Fungsi Sinkronisasi</strong>
+                  <span className="text-slate-400">Pada dropdown fungsi di toolbar atas editor, pilih fungsi:</span>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="bg-slate-900 text-emerald-400 px-2 py-1 rounded border border-slate-700 font-mono font-bold">syncGoogleCalendarNow</code>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl">
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white font-black flex items-center justify-center shrink-0 text-xs">3</div>
+                <div>
+                  <strong className="text-white block mb-0.5">Klik Run (Jalankan) &amp; Izinkan Akses</strong>
+                  <span className="text-slate-400">
+                    Klik tombol <strong>▶ Run</strong>. Saat popup otorisasi muncul:
+                    <br />1. Klik <em>Review Permissions</em>
+                    <br />2. Pilih akun Google Anda
+                    <br />3. Klik <em>Advanced (Lanjutan)</em> &rarr; <em>Go to (Buka) FMCU Database (unsafe)</em>
+                    <br />4. Klik <strong>Allow (Izinkan)</strong>.
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl">
+                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center shrink-0 text-xs">4</div>
+                <div>
+                  <strong className="text-white block mb-0.5">Selesai! Seluruh Agenda Tersinkronkan</strong>
+                  <span className="text-slate-400">Skrip akan otomatis menarik seluruh agenda kalender Anda dan menyimpannya ke tabel <code className="text-blue-300 font-mono">tb_events</code>. Titik-titik agenda akan langsung tampil di kalender web portal!</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText("syncGoogleCalendarNow");
+                  showToast("Nama fungsi 'syncGoogleCalendarNow' disalin ke clipboard!");
+                }}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5"
+              >
+                <span>Salin Nama Fungsi</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGcalAuthModal(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs font-semibold transition-colors"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowGcalAuthModal(false);
+                    handleSyncByCalendarId("all");
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Coba Tarik Ulang</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

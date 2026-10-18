@@ -38,6 +38,7 @@ import { generateGoogleCalendarAddUrl } from "@/lib/calendarUtils";
 interface TrainingCalendarProps {
   events: CalendarEvent[];
   embedUrl?: string;
+  onRefresh?: () => Promise<void> | void;
 }
 
 const MONTH_NAMES = [
@@ -164,12 +165,13 @@ export const parseAnyEventDate = (dateStr: string): { year: number; month: numbe
   return fallback;
 };
 
-export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embedUrl }) => {
+export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embedUrl, onRefresh }) => {
   // Default to interactive bespoke calendar view!
   const [viewMode, setViewMode] = useState<"calendar" | "agenda" | "my-classes">("calendar");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeEventDetail, setActiveEventDetail] = useState<CalendarEvent | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Month navigation state: Initialize to current month, or nearest month that has events
   const [currentDate, setCurrentDate] = useState<Date>(() => {
@@ -180,12 +182,51 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       return p.year === now.getFullYear() && p.month === now.getMonth();
     });
     if (!hasInCurrent && events.length > 0) {
-      // Pick the first event's month
+      // Prefer October 2026 if present
+      const octEvent = events.find((e) => {
+        const p = parseAnyEventDate(e.date);
+        return p.year === 2026 && p.month === 9;
+      });
+      if (octEvent) {
+        const p = parseAnyEventDate(octEvent.date);
+        return new Date(p.year, p.month, 1);
+      }
       const firstParsed = parseAnyEventDate(events[0].date);
       return new Date(firstParsed.year, firstParsed.month, 1);
     }
     return now;
   });
+
+  // When events change, ensure view navigates to month that has events if current month has none
+  useEffect(() => {
+    if (events.length > 0) {
+      const hasInCurrent = events.some((e) => {
+        const p = parseAnyEventDate(e.date);
+        return p.year === currentDate.getFullYear() && p.month === currentDate.getMonth();
+      });
+      if (!hasInCurrent) {
+        const octEvent = events.find((e) => {
+          const p = parseAnyEventDate(e.date);
+          return p.year === 2026 && p.month === 9;
+        }) || events[0];
+        if (octEvent) {
+          const p = parseAnyEventDate(octEvent.date);
+          setCurrentDate(new Date(p.year, p.month, 1));
+        }
+      }
+    }
+  }, [events]);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } finally {
+      setTimeout(() => setIsSyncing(false), 600);
+    }
+  };
 
   const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
 
@@ -722,8 +763,19 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                 </div>
               </div>
 
-              {/* Month Navigation & Today Shortcut */}
+              {/* Month Navigation, Sync & Today Shortcut */}
               <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  className="px-3 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-60"
+                  title="Muat ulang seluruh agenda dari cloud database"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isSyncing ? "animate-spin" : ""}`} />
+                  <span className="hidden sm:inline">Sinkronkan</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleToday}

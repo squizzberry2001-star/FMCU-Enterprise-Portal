@@ -103,7 +103,7 @@ function doGet(e) {
     }
 
     if (action === "getGoogleCalendar") {
-      const calId = (e && e.parameter && e.parameter.calendarId) || "primary";
+      const calId = (e && e.parameter && e.parameter.calendarId) || "all";
       const result = fetchGoogleCalendarEvents(calId);
       return responseJSON(result);
     }
@@ -262,7 +262,7 @@ function doPost(e) {
       return responseJSON({ success: true, message: "Banner tersimpan!" });
     }
     if (action === "syncGoogleCalendar") {
-      const calId = payload.calendarId || "primary";
+      const calId = payload.calendarId || "all";
       const calRes = fetchGoogleCalendarEvents(calId);
       if (calRes.success && calRes.events && calRes.events.length > 0) {
         saveTableData(SHEET_NAMES.EVENTS, calRes.events);
@@ -292,10 +292,9 @@ function getAllPortalData() {
   let events = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.EVENTS));
   const docs = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.DOCS));
 
-  // Otomatis tarik live event dari Google Calendar FMCU jika izin CalendarApp sudah diotorisasi
+  // Otomatis tarik live event dari Google Calendar jika izin CalendarApp sudah diotorisasi
   try {
-    const FMCU_CAL_ID = "c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb@group.calendar.google.com";
-    const calRes = fetchGoogleCalendarEvents(FMCU_CAL_ID);
+    const calRes = fetchAllGoogleCalendarEvents();
     if (calRes.success && calRes.events && calRes.events.length > 0) {
       const eventMap = {};
       events.forEach(function(e) { if (e.id) eventMap[e.id] = e; });
@@ -303,7 +302,7 @@ function getAllPortalData() {
       events = Object.keys(eventMap).map(function(k) { return eventMap[k]; });
     }
   } catch (err) {
-    // Jika izin belum diberikan, gunakan data tb_events yang tersimpan
+    // Jika izin belum diotorisasi, tetap gunakan data tb_events yang tersimpan di sheet
   }
   
   // Banner Alert from settings
@@ -481,12 +480,173 @@ function responseJSON(obj) {
 const FMCU_CALENDAR_ID = "c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb@group.calendar.google.com";
 
 /**
+ * Tarik seluruh agenda dari SEMUA kalender Google yang terhubung dengan akun ini.
+ * Memindai: Kalender Utama (primary/default), Kalender FMCU, dan seluruh kalender di 'My calendars'
+ * (seperti regional bestie, T-BYG New Hire, dsb).
+ */
+function fetchAllGoogleCalendarEvents() {
+  try {
+    const calendarMap = {};
+    const calendarList = [];
+
+    // 1. Coba kalender default / primary
+    try {
+      const defCal = CalendarApp.getDefaultCalendar();
+      if (defCal && !calendarMap[defCal.getId()]) {
+        calendarMap[defCal.getId()] = true;
+        calendarList.push(defCal);
+      }
+    } catch(e) {}
+
+    // 2. Coba kalender spesifik FMCU
+    try {
+      const fmcuCal = CalendarApp.getCalendarById(FMCU_CALENDAR_ID);
+      if (fmcuCal && !calendarMap[fmcuCal.getId()]) {
+        calendarMap[fmcuCal.getId()] = true;
+        calendarList.push(fmcuCal);
+      }
+    } catch(e) {}
+
+    // 3. Ambil seluruh kalender dari getAllCalendars()
+    try {
+      const allCals = CalendarApp.getAllCalendars();
+      for (let c = 0; c < allCals.length; c++) {
+        const cal = allCals[c];
+        if (cal && !calendarMap[cal.getId()]) {
+          const nameLower = cal.getName().toLowerCase();
+          // Lewati kalender hari libur umum
+          if (nameLower.indexOf("holidays") === -1 && nameLower.indexOf("hari libur") === -1) {
+            calendarMap[cal.getId()] = true;
+            calendarList.push(cal);
+          }
+        }
+      }
+    } catch(e) {}
+
+    if (calendarList.length === 0) {
+      return { success: false, error: "Tidak ada kalender yang dapat diakses oleh CalendarApp." };
+    }
+
+    const now = new Date();
+    // Tarik event dari 180 hari ke belakang hingga 365 hari ke depan
+    const startTime = new Date(now.getTime() - (180 * 24 * 60 * 60 * 1000));
+    const endTime = new Date(now.getTime() + (365 * 24 * 60 * 60 * 1000));
+
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+    const eventMap = {};
+    const parsedEvents = [];
+    const scannedNames = [];
+
+    for (let c = 0; c < calendarList.length; c++) {
+      const cal = calendarList[c];
+      scannedNames.push(cal.getName());
+      let events = [];
+      try {
+        events = cal.getEvents(startTime, endTime);
+      } catch(e) {
+        continue;
+      }
+
+      for (let i = 0; i < events.length; i++) {
+        const ev = events[i];
+        const eventId = ev.getId();
+        if (eventMap[eventId]) continue;
+
+        const start = ev.getStartTime();
+        const end = ev.getEndTime();
+        
+        const day = start.getDate();
+        const month = MONTHS[start.getMonth()];
+        const year = start.getFullYear();
+        const dateStr = day + " " + month + " " + year;
+
+        const pad = function(n) { return n < 10 ? '0' + n : n; };
+        let timeStr = "";
+        if (ev.isAllDayEvent && ev.isAllDayEvent()) {
+          timeStr = "Sepanjang Hari";
+        } else {
+          timeStr = pad(start.getHours()) + ":" + pad(start.getMinutes()) + " - " + 
+                    pad(end.getHours()) + ":" + pad(end.getMinutes()) + " WIB";
+        }
+
+        const loc = ev.getLocation() || "Google Meet";
+        const desc = ev.getDescription() || "";
+
+        let meetingUrl = "";
+        const urlMatch = (loc + " " + desc).match(/https:\/\/(meet\.google\.com|teams\.microsoft\.com|zoom\.us\/j)\/[^\s"']+/i);
+        if (urlMatch) {
+          meetingUrl = urlMatch[0];
+        }
+
+        const isOnline = /meet|zoom|teams|online|webinar/i.test(loc + " " + desc);
+
+        let type = "Webinar";
+        const combined = (ev.getTitle() + " " + desc).toLowerCase();
+        if (combined.indexOf("workshop") !== -1 || combined.indexOf("training center") !== -1 || combined.indexOf("tatap muka") !== -1) {
+          type = "Workshop Offline";
+        } else if (combined.indexOf("sertifikasi") !== -1 || combined.indexOf("exam") !== -1 || combined.indexOf("ujian") !== -1 || combined.indexOf("test") !== -1) {
+          type = "Certification Exam";
+        } else if (combined.indexOf("sharing") !== -1 || combined.indexOf("mentoring") !== -1 || combined.indexOf("onboarding") !== -1 || combined.indexOf("briefing") !== -1) {
+          type = "Sharing Session";
+        }
+
+        const item = {
+          id: "gcal-" + eventId,
+          title: ev.getTitle() || "Sesi FMCU",
+          type: type,
+          trainer: (ev.getCreators && ev.getCreators().length > 0 ? ev.getCreators().join(", ") : "") || cal.getName() || "Trainer FMCU",
+          date: dateStr,
+          time: timeStr,
+          location: loc,
+          isOnline: isOnline,
+          meetingUrl: meetingUrl || (isOnline ? "https://meet.google.com" : ""),
+          registeredCount: 0,
+          maxCapacity: 100,
+          description: desc,
+          googleEventId: eventId,
+          calendarName: cal.getName(),
+          startDateTime: start.toISOString(),
+          endDateTime: end.toISOString()
+        };
+
+        eventMap[eventId] = item;
+        parsedEvents.push(item);
+      }
+    }
+
+    // Urutkan agenda secara kronologis berdasarkan waktu mulai
+    parsedEvents.sort(function(a, b) {
+      return new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime();
+    });
+
+    return {
+      success: true,
+      scannedCalendars: scannedNames,
+      count: parsedEvents.length,
+      events: parsedEvents
+    };
+  } catch(err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
  * Ambil jadwal event langsung dari Google Calendar (Native CalendarApp)
  */
 function fetchGoogleCalendarEvents(calendarId) {
+  if (!calendarId || calendarId === "all" || calendarId.trim() === "") {
+    return fetchAllGoogleCalendarEvents();
+  }
+
   try {
-    const id = (calendarId && calendarId.trim() && calendarId !== "primary") ? calendarId.trim() : FMCU_CALENDAR_ID;
+    const id = calendarId.trim();
     let cal = CalendarApp.getCalendarById(id);
+    if (!cal && id === "primary") {
+      cal = CalendarApp.getDefaultCalendar();
+    }
+    if (!cal) {
+      cal = CalendarApp.getCalendarById(FMCU_CALENDAR_ID);
+    }
     if (!cal) {
       cal = CalendarApp.getDefaultCalendar();
     }
@@ -494,14 +654,13 @@ function fetchGoogleCalendarEvents(calendarId) {
     if (!cal) {
       return { 
         success: false, 
-        error: "Google Calendar dengan ID '" + id + "' tidak ditemukan. Pastikan Calendar ID benar atau akun Google memiliki izin akses kalender tersebut." 
+        error: "Google Calendar dengan ID '" + id + "' tidak ditemukan. Pastikan Calendar ID benar atau gunakan opsi 'Semua Kalender'." 
       };
     }
 
     const now = new Date();
-    // Ambil event dari 90 hari lalu hingga 180 hari mendatang
-    const startTime = new Date(now.getTime() - (90 * 24 * 60 * 60 * 1000));
-    const endTime = new Date(now.getTime() + (180 * 24 * 60 * 60 * 1000));
+    const startTime = new Date(now.getTime() - (180 * 24 * 60 * 60 * 1000));
+    const endTime = new Date(now.getTime() + (365 * 24 * 60 * 60 * 1000));
     
     const events = cal.getEvents(startTime, endTime);
     const parsedEvents = [];
@@ -518,8 +677,13 @@ function fetchGoogleCalendarEvents(calendarId) {
       const dateStr = day + " " + month + " " + year;
 
       const pad = function(n) { return n < 10 ? '0' + n : n; };
-      const timeStr = pad(start.getHours()) + ":" + pad(start.getMinutes()) + " - " + 
-                      pad(end.getHours()) + ":" + pad(end.getMinutes()) + " WIB";
+      let timeStr = "";
+      if (ev.isAllDayEvent && ev.isAllDayEvent()) {
+        timeStr = "Sepanjang Hari";
+      } else {
+        timeStr = pad(start.getHours()) + ":" + pad(start.getMinutes()) + " - " + 
+                  pad(end.getHours()) + ":" + pad(end.getMinutes()) + " WIB";
+      }
 
       const loc = ev.getLocation() || "Google Meet";
       const desc = ev.getDescription() || "";
@@ -534,15 +698,19 @@ function fetchGoogleCalendarEvents(calendarId) {
 
       let type = "Webinar";
       const combined = (ev.getTitle() + " " + desc).toLowerCase();
-      if (combined.indexOf("workshop") !== -1) type = "Workshop Offline";
-      else if (combined.indexOf("sertifikasi") !== -1 || combined.indexOf("exam") !== -1 || combined.indexOf("ujian") !== -1) type = "Certification Exam";
-      else if (combined.indexOf("sharing") !== -1 || combined.indexOf("talk") !== -1) type = "Sharing Session";
+      if (combined.indexOf("workshop") !== -1 || combined.indexOf("training center") !== -1 || combined.indexOf("tatap muka") !== -1) {
+        type = "Workshop Offline";
+      } else if (combined.indexOf("sertifikasi") !== -1 || combined.indexOf("exam") !== -1 || combined.indexOf("ujian") !== -1 || combined.indexOf("test") !== -1) {
+        type = "Certification Exam";
+      } else if (combined.indexOf("sharing") !== -1 || combined.indexOf("mentoring") !== -1 || combined.indexOf("onboarding") !== -1 || combined.indexOf("briefing") !== -1) {
+        type = "Sharing Session";
+      }
 
       parsedEvents.push({
         id: "gcal-" + ev.getId(),
-        title: ev.getTitle(),
+        title: ev.getTitle() || "Sesi FMCU",
         type: type,
-        trainer: ev.getCreators().join(", ") || "Trainer FMCU",
+        trainer: (ev.getCreators && ev.getCreators().length > 0 ? ev.getCreators().join(", ") : "") || cal.getName() || "Trainer FMCU",
         date: dateStr,
         time: timeStr,
         location: loc,
@@ -552,10 +720,15 @@ function fetchGoogleCalendarEvents(calendarId) {
         maxCapacity: 100,
         description: desc,
         googleEventId: ev.getId(),
+        calendarName: cal.getName(),
         startDateTime: start.toISOString(),
         endDateTime: end.toISOString()
       });
     }
+
+    parsedEvents.sort(function(a, b) {
+      return new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime();
+    });
 
     return {
       success: true,
@@ -574,13 +747,15 @@ function fetchGoogleCalendarEvents(calendarId) {
  * sekaligus menarik seluruh event kalender FMCU dan menyimpannya ke sheet tb_events!
  */
 function syncGoogleCalendarNow() {
-  const result = fetchGoogleCalendarEvents(FMCU_CALENDAR_ID);
-  Logger.log("Hasil Sync Google Calendar: " + JSON.stringify(result, null, 2));
+  Logger.log("=== MEMULAI SINKRONISASI GOOGLE CALENDAR FMCU ===");
+  const result = fetchAllGoogleCalendarEvents();
+  Logger.log("Kalender yang dipindai: " + (result.scannedCalendars ? result.scannedCalendars.join(", ") : "None"));
+  Logger.log("Total agenda ditemukan: " + (result.count || 0));
   if (result.success && result.events && result.events.length > 0) {
     saveTableData(SHEET_NAMES.EVENTS, result.events);
-    Logger.log("✓ Berhasil menyimpan " + result.events.length + " agenda ke database tb_events!");
+    Logger.log("✓ BERHASIL! " + result.events.length + " agenda telah disimpan ke tabel database tb_events!");
   } else {
-    Logger.log("Perhatian: " + (result.error || "Tidak ada agenda pada rentang waktu ini"));
+    Logger.log("Peringatan: " + (result.error || "Tidak ada agenda yang ditemukan"));
   }
   return result;
 }
