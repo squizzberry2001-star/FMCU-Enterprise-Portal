@@ -30,7 +30,8 @@ import {
   Filter,
   Eye,
   Layers,
-  GraduationCap
+  GraduationCap,
+  RefreshCw
 } from "lucide-react";
 import { generateGoogleCalendarAddUrl } from "@/lib/calendarUtils";
 
@@ -50,9 +51,118 @@ const MONTH_SHORT = [
 ];
 
 const DAY_NAMES = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
-const DAY_NAMES_FULL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-
 const STORAGE_KEY_REG = "fmcu_registered_events_v2";
+
+/**
+ * Universal Event Date Parser: handles ISO, DD/MM/YYYY, Indonesian "18 Okt 2026", English "18 Oct 2026", etc.
+ */
+export const parseAnyEventDate = (dateStr: string): { year: number; month: number; day: number; dateObj: Date; label: string } => {
+  const fallbackDate = new Date();
+  const fallback = { 
+    year: fallbackDate.getFullYear(), 
+    month: fallbackDate.getMonth(), 
+    day: fallbackDate.getDate(), 
+    dateObj: fallbackDate,
+    label: `${fallbackDate.getDate()} ${MONTH_SHORT[fallbackDate.getMonth()]}`
+  };
+
+  if (!dateStr || typeof dateStr !== "string") return fallback;
+  const s = dateStr.trim();
+
+  // 1. ISO string with T (e.g. "2026-09-08T17:00:00.000Z")
+  if (s.includes("T")) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return { 
+        year: d.getFullYear(), 
+        month: d.getMonth(), 
+        day: d.getDate(), 
+        dateObj: d,
+        label: `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`
+      };
+    }
+  }
+
+  // 2. YYYY-MM-DD
+  const ymd = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (ymd) {
+    const y = parseInt(ymd[1], 10);
+    const m = parseInt(ymd[2], 10) - 1;
+    const d = parseInt(ymd[3], 10);
+    const dateObj = new Date(y, m, d);
+    return { year: y, month: m, day: d, dateObj, label: `${d} ${MONTH_SHORT[m]}` };
+  }
+
+  // 3. DD/MM/YYYY or DD-MM-YYYY
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmy) {
+    const d = parseInt(dmy[1], 10);
+    const m = parseInt(dmy[2], 10) - 1;
+    const y = parseInt(dmy[3], 10);
+    const dateObj = new Date(y, m, d);
+    return { year: y, month: m, day: d, dateObj, label: `${d} ${MONTH_SHORT[m]}` };
+  }
+
+  // 4. Word-based date: "18 Okt 2026", "24 Oktober 2026", "18 Oct 2026", "Sunday, 18 Oct 2026"
+  const clean = s.replace(/^[a-zA-Z]+,\s*/, "");
+  const tokens = clean.split(/[\s,]+/);
+
+  const monthMap: Record<string, number> = {
+    jan: 0, januari: 0, january: 0,
+    feb: 1, februari: 1, february: 1,
+    mar: 2, maret: 2, march: 2,
+    apr: 3, april: 3,
+    mei: 4, may: 4,
+    jun: 5, juni: 5, june: 5,
+    jul: 6, juli: 6, july: 6,
+    agu: 7, agustus: 7, aug: 7, august: 7,
+    sep: 8, september: 8,
+    okt: 9, oktober: 9, oct: 9, october: 9,
+    nov: 10, november: 10,
+    des: 11, desember: 11, dec: 11, december: 11
+  };
+
+  let dayNum: number | null = null;
+  let monthIdx: number | null = null;
+  let yearNum: number | null = null;
+
+  for (const token of tokens) {
+    const lower = token.toLowerCase();
+    for (const prefix in monthMap) {
+      if (lower.startsWith(prefix) && monthIdx === null) {
+        monthIdx = monthMap[prefix];
+        break;
+      }
+    }
+    const num = parseInt(token, 10);
+    if (!isNaN(num)) {
+      if (num > 1900 && num < 2100 && yearNum === null) {
+        yearNum = num;
+      } else if (num >= 1 && num <= 31 && dayNum === null) {
+        dayNum = num;
+      }
+    }
+  }
+
+  if (dayNum !== null && monthIdx !== null) {
+    const y = yearNum || new Date().getFullYear();
+    const dateObj = new Date(y, monthIdx, dayNum);
+    return { year: y, month: monthIdx, day: dayNum, dateObj, label: `${dayNum} ${MONTH_SHORT[monthIdx]}` };
+  }
+
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return { 
+      year: d.getFullYear(), 
+      month: d.getMonth(), 
+      day: d.getDate(), 
+      dateObj: d,
+      label: `${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`
+    };
+  }
+
+  return fallback;
+};
 
 export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embedUrl }) => {
   // Default to interactive bespoke calendar view!
@@ -60,10 +170,23 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
   const [selectedType, setSelectedType] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeEventDetail, setActiveEventDetail] = useState<CalendarEvent | null>(null);
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
-  // Month navigation state
-  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+  // Month navigation state: Initialize to current month, or nearest month that has events
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    const now = new Date();
+    // Check if there are events in current month
+    const hasInCurrent = events.some((e) => {
+      const p = parseAnyEventDate(e.date);
+      return p.year === now.getFullYear() && p.month === now.getMonth();
+    });
+    if (!hasInCurrent && events.length > 0) {
+      // Pick the first event's month
+      const firstParsed = parseAnyEventDate(events[0].date);
+      return new Date(firstParsed.year, firstParsed.month, 1);
+    }
+    return now;
+  });
+
   const [selectedDateFilter, setSelectedDateFilter] = useState<string | null>(null);
 
   // User registered events stored in local state & localStorage
@@ -88,48 +211,30 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
     });
   };
 
-  // Helper to parse event date into clean comparable components
-  const parseEventDayMonth = (dateStr: string) => {
-    if (!dateStr) return { day: "1", month: "Okt", year: "2026", dateObj: new Date() };
-
-    // Handle ISO timestamp string (e.g. from Google Calendar / API: "2026-10-18T17:00:00.000Z")
-    if (dateStr.includes("T") || (dateStr.includes("-") && !dateStr.includes(" "))) {
-      const d = new Date(dateStr);
-      if (!isNaN(d.getTime())) {
-        return {
-          day: String(d.getDate()),
-          month: MONTH_SHORT[d.getMonth()],
-          year: String(d.getFullYear()),
-          dateObj: d
-        };
+  // Find all distinct months that have events so user can jump to them in 1 click!
+  const monthsWithEvents = useMemo(() => {
+    const map = new Map<string, { year: number; month: number; label: string; count: number }>();
+    events.forEach((e) => {
+      const p = parseAnyEventDate(e.date);
+      const key = `${p.year}-${p.month}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(key, {
+          year: p.year,
+          month: p.month,
+          label: `${MONTH_NAMES[p.month]} ${p.year}`,
+          count: 1
+        });
       }
-    }
-
-    const parts = dateStr.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      let monthPart = parts[1];
-      const foundIdx = MONTH_NAMES.findIndex(
-        (m) => m.toLowerCase().startsWith(monthPart.toLowerCase().slice(0, 3))
-      );
-      if (foundIdx !== -1) {
-        monthPart = MONTH_SHORT[foundIdx];
-      }
-      const dayNum = parseInt(parts[0], 10) || 1;
-      const yrNum = parseInt(parts[2], 10) || 2026;
-      const mIdx = foundIdx !== -1 ? foundIdx : 9; // default Oct
-      return {
-        day: String(dayNum),
-        month: monthPart,
-        year: String(yrNum),
-        dateObj: new Date(yrNum, mIdx, dayNum)
-      };
-    }
-    return { day: "1", month: "Okt", year: "2026", dateObj: new Date() };
-  };
+    });
+    return Array.from(map.values()).sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month));
+  }, [events]);
 
   // Relative status helper (Hari ini, Besok, Selesai, X hari lagi)
   const getRelativeDayText = (dateStr: string) => {
-    const { dateObj } = parseEventDayMonth(dateStr);
+    const { dateObj } = parseAnyEventDate(dateStr);
     const now = new Date();
     
     // Normalize to date-only comparison
@@ -173,10 +278,9 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
 
       let matchDate = true;
       if (selectedDateFilter) {
-        const { day, month } = parseEventDayMonth(evt.date);
-        const filterKey = `${day} ${month}`;
-        matchDate = filterKey.toLowerCase().includes(selectedDateFilter.toLowerCase()) ||
-          evt.date.toLowerCase().includes(selectedDateFilter.toLowerCase());
+        const p = parseAnyEventDate(evt.date);
+        const filterKey = `${p.year}-${p.month}-${p.day}`;
+        matchDate = filterKey === selectedDateFilter;
       }
 
       const matchMyClasses = viewMode !== "my-classes" || registered.includes(evt.id);
@@ -197,7 +301,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
   const firstDayIndex = new Date(year, month, 1).getDay(); // 0 is Sunday
   const prevMonthDays = new Date(year, month, 0).getDate();
 
-  // Create grid cells
+  // Create grid cells with exact year-month-day matching
   const calendarDays = useMemo(() => {
     const days: Array<{
       dayNumber: number;
@@ -207,10 +311,11 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       eventsCount: number;
       matchedEvents: CalendarEvent[];
       isToday: boolean;
+      year: number;
+      month: number;
     }> = [];
 
     const today = new Date();
-    const isCurrentActualMonth = today.getFullYear() === year && today.getMonth() === month;
 
     // Previous month padding
     for (let i = firstDayIndex - 1; i >= 0; i--) {
@@ -218,29 +323,37 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       const prevMonthIdx = month === 0 ? 11 : month - 1;
       const prevYear = month === 0 ? year - 1 : year;
       const dateStr = `${dayNum} ${MONTH_SHORT[prevMonthIdx]} ${prevYear}`;
-      const filterKey = `${dayNum} ${MONTH_SHORT[prevMonthIdx]}`;
+      const filterKey = `${prevYear}-${prevMonthIdx}-${dayNum}`;
+
+      const matchedEvents = events.filter((e) => {
+        const p = parseAnyEventDate(e.date);
+        return p.year === prevYear && p.month === prevMonthIdx && p.day === dayNum;
+      });
+
       days.push({
         dayNumber: dayNum,
         isCurrentMonth: false,
         dateStr,
         filterKey,
-        eventsCount: 0,
-        matchedEvents: [],
-        isToday: false
+        eventsCount: matchedEvents.length,
+        matchedEvents,
+        isToday: false,
+        year: prevYear,
+        month: prevMonthIdx
       });
     }
 
     // Current month days
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${d} ${MONTH_SHORT[month]} ${year}`;
-      const filterKey = `${d} ${MONTH_SHORT[month]}`;
+      const filterKey = `${year}-${month}-${d}`;
+
       const matchedEvents = events.filter((e) => {
-        const p = parseEventDayMonth(e.date);
-        return (
-          parseInt(p.day, 10) === d &&
-          p.month.toLowerCase().startsWith(MONTH_SHORT[month].toLowerCase().substring(0, 3))
-        );
+        const p = parseAnyEventDate(e.date);
+        return p.year === year && p.month === month && p.day === d;
       });
+
+      const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
 
       days.push({
         dayNumber: d,
@@ -249,25 +362,35 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
         filterKey,
         eventsCount: matchedEvents.length,
         matchedEvents,
-        isToday: isCurrentActualMonth && today.getDate() === d
+        isToday,
+        year,
+        month
       });
     }
 
-    // Next month padding to fill grid
+    // Next month padding to fill grid (35 or 42 cells)
     const remaining = 35 - days.length > 0 ? 35 - days.length : (42 - days.length > 0 ? 42 - days.length : 0);
     for (let n = 1; n <= remaining; n++) {
       const nextMonthIdx = month === 11 ? 0 : month + 1;
       const nextYear = month === 11 ? year + 1 : year;
       const dateStr = `${n} ${MONTH_SHORT[nextMonthIdx]} ${nextYear}`;
-      const filterKey = `${n} ${MONTH_SHORT[nextMonthIdx]}`;
+      const filterKey = `${nextYear}-${nextMonthIdx}-${n}`;
+
+      const matchedEvents = events.filter((e) => {
+        const p = parseAnyEventDate(e.date);
+        return p.year === nextYear && p.month === nextMonthIdx && p.day === n;
+      });
+
       days.push({
         dayNumber: n,
         isCurrentMonth: false,
         dateStr,
         filterKey,
-        eventsCount: 0,
-        matchedEvents: [],
-        isToday: false
+        eventsCount: matchedEvents.length,
+        matchedEvents,
+        isToday: false,
+        year: nextYear,
+        month: nextMonthIdx
       });
     }
 
@@ -287,7 +410,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
   const handleToday = () => {
     const now = new Date();
     setCurrentDate(now);
-    setSelectedDateFilter(`${now.getDate()} ${MONTH_SHORT[now.getMonth()]}`);
+    setSelectedDateFilter(`${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`);
   };
 
   const getTypeStyle = (type: string) => {
@@ -295,7 +418,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       case "Webinar":
         return {
           pill: "bg-blue-500/10 text-blue-600 border-blue-500/20 font-bold",
-          dot: "bg-blue-500",
+          dot: "bg-blue-500 ring-2 ring-blue-300",
           gradient: "from-blue-600 to-indigo-700",
           accentBorder: "hover:border-blue-500",
           badgeBg: "bg-blue-600 text-white"
@@ -303,7 +426,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       case "Workshop Offline":
         return {
           pill: "bg-amber-500/10 text-amber-600 border-amber-500/20 font-bold",
-          dot: "bg-amber-500",
+          dot: "bg-amber-500 ring-2 ring-amber-300",
           gradient: "from-amber-500 to-orange-600",
           accentBorder: "hover:border-amber-500",
           badgeBg: "bg-amber-500 text-slate-950 font-bold"
@@ -311,7 +434,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       case "Certification Exam":
         return {
           pill: "bg-purple-500/10 text-purple-600 border-purple-500/20 font-bold",
-          dot: "bg-purple-500",
+          dot: "bg-purple-500 ring-2 ring-purple-300",
           gradient: "from-purple-600 to-pink-600",
           accentBorder: "hover:border-purple-500",
           badgeBg: "bg-purple-600 text-white"
@@ -319,7 +442,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       case "Sharing Session":
         return {
           pill: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-bold",
-          dot: "bg-emerald-500",
+          dot: "bg-emerald-500 ring-2 ring-emerald-300",
           gradient: "from-emerald-500 to-teal-600",
           accentBorder: "hover:border-emerald-500",
           badgeBg: "bg-emerald-600 text-white"
@@ -327,13 +450,26 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
       default:
         return {
           pill: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20 font-bold",
-          dot: "bg-indigo-500",
+          dot: "bg-indigo-500 ring-2 ring-indigo-300",
           gradient: "from-indigo-600 to-blue-600",
           accentBorder: "hover:border-indigo-500",
           badgeBg: "bg-indigo-600 text-white"
         };
     }
   };
+
+  // Selected date human text
+  const selectedDateText = useMemo(() => {
+    if (!selectedDateFilter) return null;
+    const parts = selectedDateFilter.split("-");
+    if (parts.length === 3) {
+      const y = parts[0];
+      const m = parseInt(parts[1], 10);
+      const d = parts[2];
+      return `${d} ${MONTH_NAMES[m]} ${y}`;
+    }
+    return selectedDateFilter;
+  }, [selectedDateFilter]);
 
   return (
     <div className="space-y-6">
@@ -384,7 +520,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
           <div className="text-2xl sm:text-3xl font-black tracking-tight text-amber-400">{offlineCount}</div>
           <div className="text-[11px] text-amber-300/80 mt-1 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            <span>Tatap Muka & Praktik</span>
+            <span>Tatap Muka &amp; Praktik</span>
           </div>
         </div>
 
@@ -441,7 +577,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
             }`}
           >
             <List className="w-4 h-4" />
-            <span>Daftar Seluruh Kelas</span>
+            <span>Daftar Seluruh Kelas ({events.length})</span>
           </button>
 
           <button
@@ -479,7 +615,45 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
         </div>
       </div>
 
-      {/* ==================== 3. CATEGORY PILL FILTERS ==================== */}
+      {/* ==================== 3. MONTH JUMPER PILLS (ACTIVE MONTHS) ==================== */}
+      {monthsWithEvents.length > 0 && (
+        <div className="bg-slate-50 border border-slate-200/80 p-3 rounded-2xl flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider pl-1 shrink-0 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            Bulan dengan Jadwal:
+          </span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {monthsWithEvents.map((m) => {
+              const isCurrent = year === m.year && month === m.month;
+              return (
+                <button
+                  key={`${m.year}-${m.month}`}
+                  type="button"
+                  onClick={() => {
+                    setCurrentDate(new Date(m.year, m.month, 1));
+                    setSelectedDateFilter(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs border ${
+                    isCurrent
+                      ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                      : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>{m.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                    isCurrent ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"
+                  }`}>
+                    {m.count} sesi
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 4. CATEGORY PILL FILTERS ==================== */}
       <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider pl-1 shrink-0 flex items-center gap-1">
           <Filter className="w-3.5 h-3.5 text-slate-400" />
@@ -512,8 +686,8 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
               <Calendar className="w-4 h-4" />
             </div>
             <div>
-              <span className="text-slate-500 block text-[11px]">Memfilter jadwal pada tanggal:</span>
-              <strong className="text-blue-950 font-bold text-sm">{selectedDateFilter}</strong>
+              <span className="text-slate-500 block text-[11px]">Memfilter jadwal khusus pada tanggal:</span>
+              <strong className="text-blue-950 font-bold text-sm">{selectedDateText}</strong>
             </div>
           </div>
           <button
@@ -522,12 +696,12 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
             className="px-3 py-1 bg-white hover:bg-blue-100 text-blue-700 font-bold rounded-lg border border-blue-300 transition-colors shadow-2xs text-xs flex items-center gap-1"
           >
             <X className="w-3 h-3" />
-            <span>Lihat Semua Hari</span>
+            <span>Lihat Semua Tanggal</span>
           </button>
         </div>
       )}
 
-      {/* ==================== 4. VIEW: BESPOKE INTERACTIVE CALENDAR ==================== */}
+      {/* ==================== 5. VIEW: BESPOKE INTERACTIVE CALENDAR ==================== */}
       {viewMode === "calendar" && (
         <div className="space-y-6">
           <div className="bg-white border border-slate-200/90 rounded-3xl p-4 sm:p-6 shadow-sm space-y-5">
@@ -543,7 +717,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                     {MONTH_NAMES[month]} <span className="text-blue-600 font-extrabold">{year}</span>
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Klik pada tanggal yang memiliki lingkaran warna untuk melihat sesi kelas hari tersebut.
+                    Klik pada tanggal yang memiliki penanda untuk melihat rincian sesi kelas hari tersebut.
                   </p>
                 </div>
               </div>
@@ -583,19 +757,19 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
             {/* Type Color Indicators Legend */}
             <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs text-slate-600 pt-1">
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-200" />
                 <span className="font-medium">Webinar Virtual</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-amber-200" />
                 <span className="font-medium">Workshop Offline</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
-                <span className="font-medium">Sertifikasi & Ujian</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-500 ring-2 ring-purple-200" />
+                <span className="font-medium">Sertifikasi &amp; Ujian</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
                 <span className="font-medium">Sharing Session</span>
               </div>
             </div>
@@ -623,44 +797,53 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                         setSelectedDateFilter(isSelected ? null : cell.filterKey);
                       }
                     }}
-                    className={`min-h-[82px] sm:min-h-[105px] p-2 sm:p-2.5 rounded-2xl border flex flex-col justify-between transition-all duration-200 group relative select-none ${
+                    className={`min-h-[84px] sm:min-h-[110px] p-2 sm:p-2.5 rounded-2xl border flex flex-col justify-between transition-all duration-200 select-none ${
                       !cell.isCurrentMonth
-                        ? "bg-slate-50/40 border-slate-100 text-slate-300 opacity-40 cursor-default"
+                        ? hasEvents 
+                          ? "bg-slate-50/80 border-slate-200 text-slate-500 hover:border-blue-400 cursor-pointer"
+                          : "bg-slate-50/40 border-slate-100 text-slate-300 opacity-40 cursor-default"
                         : isSelected
-                        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/30 scale-[1.02] z-10"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/30 scale-[1.02] z-10"
                         : cell.isToday
                         ? "bg-blue-50/60 border-blue-400 ring-2 ring-blue-400/40 cursor-pointer hover:border-blue-500"
                         : hasEvents
-                        ? "bg-white border-slate-200 hover:border-blue-400 hover:shadow-md cursor-pointer hover:scale-[1.01]"
+                        ? "bg-white border-blue-200 hover:border-blue-500 hover:shadow-md cursor-pointer hover:scale-[1.01] ring-1 ring-blue-500/20"
                         : "bg-white border-slate-100 text-slate-700"
                     }`}
                   >
                     {/* Top Row: Date Number & Micro Badges */}
                     <div className="flex items-center justify-between">
-                      <span
-                        className={`text-xs sm:text-sm font-bold ${
-                          isSelected
-                            ? "text-white font-black"
-                            : cell.isToday
-                            ? "text-blue-700 font-black px-1.5 py-0.5 rounded-md bg-blue-100"
-                            : cell.isCurrentMonth
-                            ? "text-slate-800"
-                            : "text-slate-400"
-                        }`}
-                      >
-                        {cell.dayNumber}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-xs sm:text-sm font-bold ${
+                            isSelected
+                              ? "text-white font-black"
+                              : cell.isToday
+                              ? "text-blue-700 font-black px-1.5 py-0.5 rounded-md bg-blue-100"
+                              : cell.isCurrentMonth
+                              ? "text-slate-800"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {cell.dayNumber}
+                        </span>
 
-                      {/* Event Count Indicator */}
+                        {/* Visible Pulsing Dot on days with agenda */}
+                        {hasEvents && !isSelected && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 ring-4 ring-blue-100 animate-pulse shrink-0" />
+                        )}
+                      </div>
+
+                      {/* Event Count Badge */}
                       {hasEvents && (
                         <span
-                          className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+                          className={`text-[10px] font-black px-2 py-0.5 rounded-full shadow-2xs ${
                             isSelected
                               ? "bg-white text-blue-700"
                               : "bg-blue-600 text-white"
                           }`}
                         >
-                          {cell.eventsCount} {cell.eventsCount === 1 ? "sesi" : "sesi"}
+                          {cell.eventsCount}
                         </span>
                       )}
                     </div>
@@ -673,22 +856,22 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                           return (
                             <div
                               key={ev.id}
-                              className={`text-[10px] font-semibold truncate px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition-colors ${
+                              className={`text-[10px] font-bold truncate px-1.5 py-0.5 rounded-lg flex items-center gap-1.5 transition-colors ${
                                 isSelected
                                   ? "bg-white/20 text-white"
-                                  : `${style.pill} bg-opacity-80`
+                                  : `${style.pill} bg-opacity-90`
                               }`}
                               title={`${ev.title} (${ev.time})`}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? "bg-white" : style.dot}`} />
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? "bg-white" : style.dot}`} />
                               <span className="truncate">{ev.title}</span>
                             </div>
                           );
                         })}
                         {cell.eventsCount > 2 && (
                           <span
-                            className={`text-[9px] font-bold block pl-1 ${
-                              isSelected ? "text-blue-100" : "text-slate-400"
+                            className={`text-[9px] font-black block pl-1 ${
+                              isSelected ? "text-blue-100" : "text-blue-600"
                             }`}
                           >
                             +{cell.eventsCount - 2} sesi lainnya
@@ -712,7 +895,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
             <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
               <span className="flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                <span>Tips: Klik tanggal di atas untuk memfilter jadwal kelas di bawah secara otomatis.</span>
+                <span>Tips: Klik tanggal bertitik biru di atas untuk melihat rincian agenda hari tersebut.</span>
               </span>
               <button
                 type="button"
@@ -747,15 +930,15 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
             {filteredEvents.length === 0 ? (
               <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-10 text-center space-y-3">
                 <Calendar className="w-10 h-10 text-slate-300 mx-auto" />
-                <h5 className="font-bold text-slate-700">Tidak ada agenda pada filter ini</h5>
+                <h5 className="font-bold text-slate-700">Tidak ada agenda pada tanggal / filter ini</h5>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Silakan pilih tanggal lain pada kalender atau reset filter tipe untuk melihat jadwal kelas lainnya.
+                  Silakan pilih tanggal lain pada kalender atau klik tombol di bawah untuk melihat seluruh jadwal.
                 </p>
                 <button
                   onClick={() => { setSelectedDateFilter(null); setSelectedType("all"); setSearchQuery(""); }}
                   className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-500 transition-colors shadow-sm"
                 >
-                  Reset Semua Filter
+                  Lihat Semua Tanggal
                 </button>
               </div>
             ) : (
@@ -769,7 +952,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                     onOpenDetail={() => setActiveEventDetail(evt)}
                     typeStyle={getTypeStyle(evt.type)}
                     relativeDay={getRelativeDayText(evt.date)}
-                    dateParts={parseEventDayMonth(evt.date)}
+                    dateParts={parseAnyEventDate(evt.date)}
                   />
                 ))}
               </div>
@@ -778,7 +961,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
         </div>
       )}
 
-      {/* ==================== 5. VIEW: AGENDA & MY CLASSES ==================== */}
+      {/* ==================== 6. VIEW: AGENDA & MY CLASSES ==================== */}
       {(viewMode === "agenda" || viewMode === "my-classes") && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -828,7 +1011,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                   onOpenDetail={() => setActiveEventDetail(evt)}
                   typeStyle={getTypeStyle(evt.type)}
                   relativeDay={getRelativeDayText(evt.date)}
-                  dateParts={parseEventDayMonth(evt.date)}
+                  dateParts={parseAnyEventDate(evt.date)}
                 />
               ))}
             </div>
@@ -836,7 +1019,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
         </div>
       )}
 
-      {/* ==================== 6. BESPOKE INTERACTIVE DETAIL MODAL ==================== */}
+      {/* ==================== 7. BESPOKE INTERACTIVE DETAIL MODAL ==================== */}
       {activeEventDetail && (
         <div 
           className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
@@ -882,7 +1065,7 @@ export const TrainingCalendar: React.FC<TrainingCalendarProps> = ({ events, embe
                   </div>
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">Tanggal Sesi</span>
-                    <strong className="text-slate-800 font-bold">{activeEventDetail.date}</strong>
+                    <strong className="text-slate-800 font-bold">{parseAnyEventDate(activeEventDetail.date).label} {parseAnyEventDate(activeEventDetail.date).year}</strong>
                   </div>
                 </div>
 
@@ -1034,9 +1217,10 @@ interface BespokeClassCardProps {
     color: string;
   };
   dateParts: {
-    day: string;
-    month: string;
-    year: string;
+    day: number;
+    month: number;
+    year: number;
+    label: string;
   };
 }
 
@@ -1063,7 +1247,7 @@ const BespokeClassCard: React.FC<BespokeClassCardProps> = ({
         {/* High-Visibility Date Ribbon */}
         <div className="flex flex-col items-center justify-center w-14 sm:w-16 h-16 sm:h-18 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-800 text-white border border-slate-700 shadow-sm shrink-0 text-center overflow-hidden group-hover:from-blue-700 group-hover:to-indigo-800 transition-colors">
           <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 group-hover:text-white">
-            {dateParts.month}
+            {MONTH_SHORT[dateParts.month]}
           </span>
           <span className="text-xl sm:text-2xl font-black leading-none text-white my-0.5">
             {dateParts.day}

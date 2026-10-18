@@ -289,8 +289,22 @@ function getAllPortalData() {
   
   const apps = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.APPS));
   const courses = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.COURSES));
-  const events = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.EVENTS));
+  let events = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.EVENTS));
   const docs = readSheetAsJSON(ss.getSheetByName(SHEET_NAMES.DOCS));
+
+  // Otomatis tarik live event dari Google Calendar FMCU jika izin CalendarApp sudah diotorisasi
+  try {
+    const FMCU_CAL_ID = "c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb@group.calendar.google.com";
+    const calRes = fetchGoogleCalendarEvents(FMCU_CAL_ID);
+    if (calRes.success && calRes.events && calRes.events.length > 0) {
+      const eventMap = {};
+      events.forEach(function(e) { if (e.id) eventMap[e.id] = e; });
+      calRes.events.forEach(function(e) { if (e.id) eventMap[e.id] = e; });
+      events = Object.keys(eventMap).map(function(k) { return eventMap[k]; });
+    }
+  } catch (err) {
+    // Jika izin belum diberikan, gunakan data tb_events yang tersimpan
+  }
   
   // Banner Alert from settings
   let bannerAlert = { enabled: true, title: "Pelatihan wajib: HSE Compliance 2026", dueDate: "28 Okt 2026", linkText: "Buka Modul" };
@@ -464,17 +478,17 @@ function responseJSON(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+const FMCU_CALENDAR_ID = "c_87fe13aa09c40ea6e5aadebdd8ac49b1ca6104d17441a62b1705bf1ba12b1ffb@group.calendar.google.com";
+
 /**
  * Ambil jadwal event langsung dari Google Calendar (Native CalendarApp)
  */
 function fetchGoogleCalendarEvents(calendarId) {
   try {
-    const id = calendarId || "primary";
-    let cal;
-    if (id === "primary") {
+    const id = (calendarId && calendarId.trim() && calendarId !== "primary") ? calendarId.trim() : FMCU_CALENDAR_ID;
+    let cal = CalendarApp.getCalendarById(id);
+    if (!cal) {
       cal = CalendarApp.getDefaultCalendar();
-    } else {
-      cal = CalendarApp.getCalendarById(id);
     }
 
     if (!cal) {
@@ -485,9 +499,9 @@ function fetchGoogleCalendarEvents(calendarId) {
     }
 
     const now = new Date();
-    // Ambil event dari 7 hari lalu hingga 90 hari mendatang
-    const startTime = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
-    const endTime = new Date(now.getTime() + (90 * 24 * 60 * 60 * 1000));
+    // Ambil event dari 90 hari lalu hingga 180 hari mendatang
+    const startTime = new Date(now.getTime() - (90 * 24 * 60 * 60 * 1000));
+    const endTime = new Date(now.getTime() + (180 * 24 * 60 * 60 * 1000));
     
     const events = cal.getEvents(startTime, endTime);
     const parsedEvents = [];
@@ -553,6 +567,22 @@ function fetchGoogleCalendarEvents(calendarId) {
   } catch (err) {
     return { success: false, error: err.toString() };
   }
+}
+
+/**
+ * Jalankan fungsi ini 1x di editor Apps Script untuk mengotorisasi izin Google Calendar
+ * sekaligus menarik seluruh event kalender FMCU dan menyimpannya ke sheet tb_events!
+ */
+function syncGoogleCalendarNow() {
+  const result = fetchGoogleCalendarEvents(FMCU_CALENDAR_ID);
+  Logger.log("Hasil Sync Google Calendar: " + JSON.stringify(result, null, 2));
+  if (result.success && result.events && result.events.length > 0) {
+    saveTableData(SHEET_NAMES.EVENTS, result.events);
+    Logger.log("✓ Berhasil menyimpan " + result.events.length + " agenda ke database tb_events!");
+  } else {
+    Logger.log("Perhatian: " + (result.error || "Tidak ada agenda pada rentang waktu ini"));
+  }
+  return result;
 }
 
 /**
