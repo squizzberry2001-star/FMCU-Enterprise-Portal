@@ -344,6 +344,19 @@ function readSheetAsJSON(sheet) {
 }
 
 /**
+ * Helper untuk membaca sheet menjadi array of object berdasarkan nama tabel
+ */
+function getTableData(sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    setupDatabase();
+    sheet = ss.getSheetByName(sheetName);
+  }
+  return readSheetAsJSON(sheet);
+}
+
+/**
  * Helper untuk menimpa seluruh isi tabel dengan data baru
  */
 function saveTableData(sheetName, dataList) {
@@ -375,6 +388,13 @@ function saveTableData(sheetName, dataList) {
       sheet.getRange(1, headers.length + 1).setValue("description");
       sheet.getRange(1, headers.length + 1).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
       headers.push("description");
+    }
+  }
+  if (sheetName === SHEET_NAMES.DOCS) {
+    if (headers.indexOf("viewUrl") === -1) {
+      sheet.getRange(1, headers.length + 1).setValue("viewUrl");
+      sheet.getRange(1, headers.length + 1).setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
+      headers.push("viewUrl");
     }
   }
   const rowsToWrite = [];
@@ -733,3 +753,14 @@ function installAutoClassifyTrigger() {
 
   Logger.log("✓ Trigger otomatis Google Drive FMCU setiap 1 jam berhasil diaktifkan!");
 }
+
+/**
+ * Jalankan fungsi ini di editor untuk menguji pemindaian & klasifikasi folder secara langsung
+ */
+function testAutoClassify() {
+  const result = autoClassifyDriveFolder("1N_zsTNDywwqscmYMXmgwuR3SFHTHsbxx");
+  Logger.log("Hasil Pemindaian Google Drive:");
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
